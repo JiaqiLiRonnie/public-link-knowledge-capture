@@ -1,3 +1,12 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+
+# 运行产物不入库：cookie jar、知识包、收件箱数据
+cookies.txt
+*.env
+public-link.env
+asr.env
+public-links/
+inbox/
+pending-reviews.md
