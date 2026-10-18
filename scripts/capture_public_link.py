@@ -39,9 +39,99 @@ except ImportError as error:  # pragma: no cover - environment guidance
     raise SystemExit("beautifulsoup4 is required: python3 -m pip install beautifulsoup4") from error
 
 
-DEFAULT_ROOT = str(Path.home() / ".public-link-knowledge" / "public-links")
-# Keep the default model configurable through PUBLIC_LINK_AI_MODEL; the
-# fallback is used only when the configured service rejects the primary.
+DEFAULT_ROOT = os.environ.get(
+    "PUBLIC_LINK_KNOWLEDGE_DIR"
+) or str(Path.home() / ".public-link-knowledge" / "public-links")
+
+# Netscape-format cookie jar exported from the local Chrome profile. Douyin
+# image/video CDN URLs are login-gated, so media downloads need the same
+# cookies the browser uses. Portable installs leave this file absent (no-op).
+COOKIE_FILE = Path(
+    os.environ.get("PUBLIC_LINK_COOKIE_FILE")
+    or str(Path.home() / ".public-link-knowledge" / "cookies.txt")
+)
+
+
+def browser_cookie_header(url: str) -> str:
+    """Return a Cookie header for hosts covered by the local cookie jar."""
+    try:
+        if not COOKIE_FILE.is_file():
+            return ""
+        host = (urlparse(url).hostname or "").lower()
+        if not host:
+            return ""
+        loose = "douyin" in host  # douyinpic CDN shares the douyin login family
+        pairs: list[str] = []
+        for line in COOKIE_FILE.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split("\t")
+            if len(parts) < 7:
+                continue
+            domain = parts[0].lstrip(".").lower()
+            if host == domain or host.endswith("." + domain) or (loose and "douyin" in domain):
+                pairs.append(f"{parts[5]}={parts[6]}")
+        return "; ".join(pairs)
+    except OSError:
+        return ""
+
+
+def ensure_browser_cookies() -> None:
+    """Best-effort: export Chrome cookies once when the jar is missing."""
+    if COOKIE_FILE.is_file():
+        return
+    exe = shutil.which("yt-dlp") or str(Path.home() / ".local" / "bin" / "yt-dlp")
+    if not (shutil.which(exe) or Path(exe).is_file()):
+        return
+    try:
+        COOKIE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            [exe, "--cookies-from-browser", "chrome", "--cookies", str(COOKIE_FILE),
+             "--skip-download", "--no-warnings", "-o", os.devnull, "https://www.douyin.com/"],
+            capture_output=True, timeout=120,
+        )
+    except Exception:
+        return
+
+
+def curl_download(url: str, dest: Path, referer: str = "", timeout: int = 45) -> tuple[int, str]:
+    """Download a binary with curl and return (http_status, content_type).
+
+    Douyin's image CDN resets connections from non-browser TLS fingerprints
+    (urllib gets Errno 54), but accepts curl. Cookie jar is passed via -b so
+    login-gated assets download.
+    """
+    exe = shutil.which("curl") or "/usr/bin/curl"
+    cmd = [
+        exe, "-sS", "-L", "--max-time", str(timeout),
+        "-A", USER_AGENT,
+        "-e", referer or "https://www.douyin.com/",
+        "-o", str(dest),
+        "-w", "%{http_code} %{content_type}",
+    ]
+    if COOKIE_FILE.is_file():
+        cmd += ["-b", str(COOKIE_FILE)]
+    cmd.append(url)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 15)
+    except Exception:
+        return (0, "")
+    out = (result.stdout or "").strip()
+    status, ctype = 0, ""
+    if out:
+        parts = out.split(" ", 1)
+        try:
+            status = int(parts[0])
+        except ValueError:
+            status = 0
+        if len(parts) > 1:
+            ctype = parts[1].strip().lower()
+    return (status, ctype)
+
+
+# Keep the default model configurable through RONNIE_OS_AI_MODEL; the fallback
+# is used only when the configured HSNB-compatible service rejects the primary.
 DEFAULT_MODEL = "deepseek-ai/deepseek-v4-flash"
 FALLBACK_MODEL = "glm-5.2"
 TRAILING = "，,。.;；、！？!?）)]】》〉」』'\""
@@ -58,10 +148,81 @@ BROWSER_CLI_TIMEOUT_S = 40
 BROWSER_CLI_VIRTUAL_TIME_MS = 15_000
 MAX_MEDIA_BYTES = 300 * 1024 * 1024
 YTDLP_TIMEOUT_S = 180
-# ASR is opt-in for portable installations; no local endpoint is assumed.
+# ASR is opt-in for portable installations; the local installation may provide
+# a persistent endpoint through the config file below. Keep the default empty
+# so a copied/public installation never silently calls a local service.
 DEFAULT_ASR_BASE_URL = ""
 DEFAULT_ASR_MODEL = "Qwen3-ASR-1.7B"
 ASR_TIMEOUT_S = 300
+
+
+def load_local_runtime_env() -> None:
+    """Load opt-in per-user runtime settings without evaluating shell syntax.
+
+    Portable installations remain opt-in: the file is absent by default. An
+    explicit process environment variable always wins over this local file.
+    """
+    config_path = Path(
+        os.environ.get(
+            "RONNIE_OS_PUBLIC_LINK_ENV",
+            str(Path.home() / ".public-link-knowledge" / "public-link.env"),
+        )
+    ).expanduser()
+    if not config_path.is_file():
+        return
+    allowed = {
+        "RONNIE_OS_ASR_BASE_URL",
+        "RONNIE_OS_ASR_MODEL",
+        "RONNIE_OS_ASR_LANGUAGE",
+        "RONNIE_OS_ASR_TIMEOUT",
+    }
+    try:
+        lines = config_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key, value = key.strip(), value.strip()
+        if key in allowed and key not in os.environ and value:
+            os.environ[key] = value
+
+
+load_local_runtime_env()
+DEFAULT_ASR_CONFIG = str(Path.home() / ".config" / "public-link" / "asr.env")
+ASR_SETTING_ALIASES: dict[str, tuple[str, ...]] = {
+    "BASE_URL": ("RONNIE_OS_ASR_BASE_URL", "PUBLIC_LINK_ASR_BASE_URL"),
+    "FALLBACK_BASE_URL": (
+        "RONNIE_OS_ASR_FALLBACK_BASE_URL",
+        "PUBLIC_LINK_ASR_FALLBACK_BASE_URL",
+    ),
+    "MODEL": ("RONNIE_OS_ASR_MODEL", "PUBLIC_LINK_ASR_MODEL"),
+    "FALLBACK_MODEL": (
+        "RONNIE_OS_ASR_FALLBACK_MODEL",
+        "PUBLIC_LINK_ASR_FALLBACK_MODEL",
+    ),
+    "API_KEY": ("RONNIE_OS_ASR_API_KEY", "PUBLIC_LINK_ASR_API_KEY"),
+    "FALLBACK_API_KEY": (
+        "RONNIE_OS_ASR_FALLBACK_API_KEY",
+        "PUBLIC_LINK_ASR_FALLBACK_API_KEY",
+    ),
+    "API_KEY_FILE": (
+        "RONNIE_OS_ASR_API_KEY_FILE",
+        "PUBLIC_LINK_ASR_API_KEY_FILE",
+    ),
+    "FALLBACK_API_KEY_FILE": (
+        "RONNIE_OS_ASR_FALLBACK_API_KEY_FILE",
+        "PUBLIC_LINK_ASR_FALLBACK_API_KEY_FILE",
+    ),
+    "LANGUAGE": ("RONNIE_OS_ASR_LANGUAGE", "PUBLIC_LINK_ASR_LANGUAGE"),
+    "TIMEOUT": ("RONNIE_OS_ASR_TIMEOUT", "PUBLIC_LINK_ASR_TIMEOUT"),
+    "FALLBACK_TIMEOUT": (
+        "RONNIE_OS_ASR_FALLBACK_TIMEOUT",
+        "PUBLIC_LINK_ASR_FALLBACK_TIMEOUT",
+    ),
+}
 
 
 class CaptureError(RuntimeError):
@@ -309,7 +470,7 @@ def browser_content_ready(html: str, platform: str) -> bool:
 
 def browser_executable() -> str:
     """Find a locally installed Chromium-compatible executable for the CLI fallback."""
-    configured = os.environ.get("PUBLIC_LINK_BROWSER_EXECUTABLE", "").strip()
+    configured = os.environ.get("RONNIE_OS_BROWSER_EXECUTABLE", "").strip()
     candidates = [
         configured,
         shutil.which("google-chrome"),
@@ -599,7 +760,7 @@ def capture_with_chrome_cdp(url: str, platform: str, fallback_resolved_url: str 
     if not executable:
         raise BrowserCaptureError("未找到 Chrome/Chromium headless 可执行文件")
 
-    command_timeout = max(10, int(os.environ.get("PUBLIC_LINK_BROWSER_CLI_TIMEOUT", BROWSER_CLI_TIMEOUT_S)))
+    command_timeout = max(10, int(os.environ.get("RONNIE_OS_BROWSER_CLI_TIMEOUT", BROWSER_CLI_TIMEOUT_S)))
     port = free_tcp_port()
     with tempfile.TemporaryDirectory(prefix="public-link-chrome-") as temp_root:
         profile_dir = Path(temp_root) / "profile"
@@ -704,8 +865,8 @@ def capture_with_chrome_dump_dom(url: str, platform: str, fallback_resolved_url:
     if not executable:
         raise BrowserCaptureError("未找到 Chrome/Chromium headless 可执行文件")
 
-    command_timeout = max(10, int(os.environ.get("PUBLIC_LINK_BROWSER_CLI_TIMEOUT", BROWSER_CLI_TIMEOUT_S)))
-    virtual_time = max(1000, int(os.environ.get("PUBLIC_LINK_BROWSER_VIRTUAL_TIME", BROWSER_CLI_VIRTUAL_TIME_MS)))
+    command_timeout = max(10, int(os.environ.get("RONNIE_OS_BROWSER_CLI_TIMEOUT", BROWSER_CLI_TIMEOUT_S)))
+    virtual_time = max(1000, int(os.environ.get("RONNIE_OS_BROWSER_VIRTUAL_TIME", BROWSER_CLI_VIRTUAL_TIME_MS)))
     with tempfile.TemporaryDirectory(prefix="public-link-chrome-") as temp_root:
         profile_dir = Path(temp_root) / "profile"
         command = [
@@ -1361,7 +1522,7 @@ def ai_completion(base_url: str, key: str, model: str, prompt: str, max_tokens: 
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
     )
     try:
-        timeout = max(10, int(os.environ.get("PUBLIC_LINK_AI_TIMEOUT", "45")))
+        timeout = max(10, int(os.environ.get("RONNIE_OS_AI_TIMEOUT", "45")))
         with urlopen(request, timeout=timeout) as response:
             result = json.loads(response.read().decode("utf-8"))
         # Deliberately read only final content, never reasoning_content.
@@ -1375,10 +1536,10 @@ def ai_completion(base_url: str, key: str, model: str, prompt: str, max_tokens: 
 
 
 def analyze(article: dict[str, Any]) -> tuple[dict[str, Any], str, int]:
-    base_url = os.environ.get("PUBLIC_LINK_AI_BASE_URL", "").strip()
-    key = os.environ.get("PUBLIC_LINK_AI_API_KEY", "").strip()
+    base_url = os.environ.get("HSNB_BASE_URL", "").strip()
+    key = os.environ.get("HSNB_API_KEY", "").strip()
     if not base_url or not key:
-        raise RuntimeError("analysis_unavailable: 未配置 PUBLIC_LINK_AI_BASE_URL / PUBLIC_LINK_AI_API_KEY")
+        raise RuntimeError("analysis_unavailable: 未配置 HSNB_BASE_URL / HSNB_API_KEY")
     source_text = article["text"]
     transcript_text = str(article.get("transcript_text") or "").strip()
     if transcript_text:
@@ -1411,7 +1572,7 @@ def analyze(article: dict[str, Any]) -> tuple[dict[str, Any], str, int]:
         },
         ensure_ascii=False,
     )
-    primary = os.environ.get("PUBLIC_LINK_AI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+    primary = os.environ.get("RONNIE_OS_AI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
     models = list(dict.fromkeys([primary, FALLBACK_MODEL]))
     errors: list[str] = []
     for model in models:
@@ -1431,34 +1592,61 @@ def download_images(media: dict[str, list[dict[str, Any]]], package_dir: Path, r
     media_dir = package_dir / "media"
     media_dir.mkdir(exist_ok=True)
     for index, item in enumerate(media.get("images", [])[:30], 1):
+        url = str(item.get("url") or "")
+        if not url:
+            item["error"] = "download failed"
+            continue
+        try:
+            ensure_public_host(url)
+        except Exception:
+            item["error"] = "blocked host"
+            continue
+        final: Path | None = None
         for _attempt in range(3):
+            # 1) curl — Douyin's CDN resets urllib's non-browser TLS fingerprint
+            tmp = media_dir / f".image-{index:03d}.part"
+            status, ctype = curl_download(url, tmp, referer)
+            if status == 200 and tmp.is_file() and tmp.stat().st_size > 0:
+                suffix = ".jpg"
+                if "webp" in ctype:
+                    suffix = ".webp"
+                elif "png" in ctype:
+                    suffix = ".png"
+                elif "gif" in ctype:
+                    suffix = ".gif"
+                final = media_dir / f"image-{index:03d}{suffix}"
+                tmp.replace(final)
+                break
+            if tmp.exists():
+                tmp.unlink(missing_ok=True)
+            # 2) urllib fallback — fine for CDNs that accept it
             try:
+                cookie_header = browser_cookie_header(url)
                 headers = {
                     "User-Agent": USER_AGENT,
                     "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
                     "Referer": referer or "https://www.xiaohongshu.com/",
                 }
-                request = Request(
-                    str(item["url"]),
-                    headers=headers,
-                )
-                with public_urlopen(request, timeout=30) as response:
+                if cookie_header:
+                    headers["Cookie"] = cookie_header
+                with public_urlopen(Request(url, headers=headers), timeout=30) as response:
                     content = response.read(8_000_000)
-                    content_type = response.headers.get("Content-Type", "").lower()
+                    ctype = response.headers.get("Content-Type", "").lower()
                 suffix = ".jpg"
-                if "webp" in content_type:
+                if "webp" in ctype:
                     suffix = ".webp"
-                elif "png" in content_type:
+                elif "png" in ctype:
                     suffix = ".png"
-                elif "gif" in content_type:
+                elif "gif" in ctype:
                     suffix = ".gif"
-                path = media_dir / f"image-{index:03d}{suffix}"
-                path.write_bytes(content)
-                item.update({"downloaded": True, "path": str(path)})
-                item.pop("error", None)
+                final = media_dir / f"image-{index:03d}{suffix}"
+                final.write_bytes(content)
                 break
             except Exception:
                 continue
+        if final is not None:
+            item.update({"downloaded": True, "path": str(final)})
+            item.pop("error", None)
         else:
             item["error"] = "download failed"
 
@@ -1554,12 +1742,15 @@ def download_media_item(
     url = str(item.get("url") or "")
     errors: list[str] = []
     if url:
+        cookie_header = browser_cookie_header(url)
         headers = {
             "User-Agent": USER_AGENT,
             "Accept": "*/*",
             "Referer": referer,
         }
         headers.update(extra_headers or {})
+        if cookie_header:
+            headers["Cookie"] = cookie_header
         try:
             request = Request(url, headers=headers)
             with public_urlopen(request, timeout=45) as response:
@@ -1725,8 +1916,88 @@ def extract_audio_from_video(video_path: Path, audio_path: Path) -> None:
     raise RuntimeError("FFmpeg 提取音频失败：" + "；".join(errors))
 
 
-def asr_endpoint() -> str:
-    base_url = os.environ.get("PUBLIC_LINK_ASR_BASE_URL", DEFAULT_ASR_BASE_URL).strip()
+def asr_config_path() -> Path:
+    """Return the local ASR config path without reading or printing secrets."""
+    for name in ("PUBLIC_LINK_ASR_CONFIG", "RONNIE_OS_ASR_CONFIG"):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return Path(value).expanduser()
+    return Path(DEFAULT_ASR_CONFIG).expanduser()
+
+
+def _read_asr_config() -> dict[str, str]:
+    """Read a small, non-executable KEY=VALUE config file.
+
+    This intentionally does not source a shell file: command substitution and
+    arbitrary shell code must never run just because a URL was captured.
+    """
+    path = asr_config_path()
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return {}
+    values: dict[str, str] = {}
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("export "):
+            stripped = stripped[7:].lstrip()
+        match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$", stripped)
+        if not match:
+            continue
+        name, value = match.groups()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        values[name] = value.strip()
+    return values
+
+
+def _asr_setting(name: str, default: str = "") -> str:
+    """Resolve settings: new env, persistent config, legacy env, then legacy config."""
+    aliases = ASR_SETTING_ALIASES[name]
+    generic_aliases = tuple(alias for alias in aliases if alias.startswith("PUBLIC_LINK_"))
+    legacy_aliases = tuple(alias for alias in aliases if alias.startswith("RONNIE_OS_"))
+    for env_name in generic_aliases:
+        value = os.environ.get(env_name)
+        if value is not None and value.strip():
+            return value.strip()
+    config = _read_asr_config()
+    for env_name in generic_aliases:
+        value = config.get(env_name, "")
+        if value.strip():
+            return value.strip()
+    for env_name in legacy_aliases:
+        value = os.environ.get(env_name)
+        if value is not None and value.strip():
+            return value.strip()
+    for env_name in legacy_aliases:
+        value = config.get(env_name, "")
+        if value.strip():
+            return value.strip()
+    return default
+
+
+def _asr_api_key(*, fallback: bool = False) -> str:
+    direct_name = "FALLBACK_API_KEY" if fallback else "API_KEY"
+    file_name = "FALLBACK_API_KEY_FILE" if fallback else "API_KEY_FILE"
+    direct = _asr_setting(direct_name)
+    if direct:
+        return direct
+    configured_path = _asr_setting(file_name)
+    if not configured_path:
+        return ""
+    path = Path(configured_path).expanduser()
+    if not path.is_absolute():
+        path = asr_config_path().parent / path
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            return handle.read(4096).strip()
+    except (OSError, UnicodeError):
+        return ""
+
+
+def _asr_endpoint_from_base(base_url: str) -> str:
     if not base_url:
         return ""
     if base_url.endswith("/v1/audio/transcriptions"):
@@ -1734,8 +2005,44 @@ def asr_endpoint() -> str:
     return base_url.rstrip("/") + "/v1/audio/transcriptions"
 
 
+def asr_endpoint(*, fallback: bool = False) -> str:
+    setting = "FALLBACK_BASE_URL" if fallback else "BASE_URL"
+    default = "" if fallback else DEFAULT_ASR_BASE_URL
+    return _asr_endpoint_from_base(_asr_setting(setting, default))
+
+
+def _asr_targets() -> list[dict[str, Any]]:
+    targets: list[dict[str, Any]] = []
+    primary = asr_endpoint()
+    if primary:
+        targets.append({"route": "primary", "endpoint": primary, "fallback": False})
+    fallback = asr_endpoint(fallback=True)
+    if fallback and fallback != primary:
+        targets.append({"route": "fallback", "endpoint": fallback, "fallback": True})
+    return targets
+
+
 def asr_is_configured() -> bool:
-    return bool(asr_endpoint())
+    return bool(_asr_targets())
+
+
+def _asr_model(*, fallback: bool = False) -> str:
+    setting = "FALLBACK_MODEL" if fallback else "MODEL"
+    default = DEFAULT_ASR_MODEL
+    return _asr_setting(setting, default) or default
+
+
+def _asr_language() -> str:
+    return _asr_setting("LANGUAGE")
+
+
+def _asr_timeout(*, fallback: bool = False) -> int:
+    setting = "FALLBACK_TIMEOUT" if fallback else "TIMEOUT"
+    value = _asr_setting(setting, str(ASR_TIMEOUT_S))
+    try:
+        return max(10, int(value))
+    except ValueError:
+        return ASR_TIMEOUT_S
 
 
 def prepare_asr_audio(audio_path: Path) -> tuple[Path, Any | None]:
@@ -1779,7 +2086,7 @@ def prepare_asr_audio(audio_path: Path) -> tuple[Path, Any | None]:
 
 def multipart_audio_body(audio_path: Path, model: str, language: str = "") -> tuple[bytes, str]:
     """Build the OpenAI-compatible multipart request without extra packages."""
-    boundary = "----PublicLinkCapture" + uuid.uuid4().hex
+    boundary = "----RonniePublicLink" + uuid.uuid4().hex
     body = bytearray()
 
     def add_field(name: str, value: str) -> None:
@@ -1807,51 +2114,74 @@ def transcribe_audio_file(audio_path: Path) -> dict[str, Any]:
     """Call the configured local OpenAI-compatible Qwen ASR endpoint."""
     if not audio_path.exists() or audio_path.stat().st_size == 0:
         raise RuntimeError(f"ASR 输入音频不存在或为空：{audio_path}")
-    endpoint = asr_endpoint()
-    if not endpoint:
-        raise RuntimeError("未配置 ASR 服务；请设置 PUBLIC_LINK_ASR_BASE_URL 后重试")
+    targets = _asr_targets()
+    if not targets:
+        raise RuntimeError(
+            "未配置 ASR 服务；请设置 RONNIE_OS_ASR_BASE_URL / PUBLIC_LINK_ASR_BASE_URL "
+            f"或创建 {asr_config_path()} 后重试"
+        )
     normalized_path, temp_root = prepare_asr_audio(audio_path)
     try:
-        model = os.environ.get("PUBLIC_LINK_ASR_MODEL", DEFAULT_ASR_MODEL).strip() or DEFAULT_ASR_MODEL
-        language = os.environ.get("PUBLIC_LINK_ASR_LANGUAGE", "").strip()
-        payload, boundary = multipart_audio_body(normalized_path, model, language)
-        headers = {
-            "User-Agent": USER_AGENT,
-            "Accept": "application/json",
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "Content-Length": str(len(payload)),
-        }
-        api_key = os.environ.get("PUBLIC_LINK_ASR_API_KEY", "").strip()
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-        request = Request(endpoint, data=payload, method="POST", headers=headers)
-        timeout = max(10, int(os.environ.get("PUBLIC_LINK_ASR_TIMEOUT", str(ASR_TIMEOUT_S))))
-        started = time.monotonic()
-        try:
-            with urlopen(request, timeout=timeout) as response:
-                raw = response.read(2_000_000)
-        except HTTPError as error:
-            detail = error.read(1000).decode("utf-8", errors="replace").strip()
-            suffix = f"：{detail[:300]}" if detail else ""
-            raise RuntimeError(f"本地 ASR 请求失败：HTTP {error.code}{suffix}") from None
-        except (URLError, TimeoutError, socket.timeout) as error:
-            raise RuntimeError(f"本地 ASR 服务不可达或超时：{type(error).__name__}") from None
-        try:
-            result = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            result = {"text": raw.decode("utf-8", errors="replace")}
-        if not isinstance(result, dict):
-            raise RuntimeError("本地 ASR 返回格式不是 JSON 对象")
-        text = str(result.get("text") or "").strip()
-        if not text:
-            raise RuntimeError("本地 ASR 返回为空")
-        return {
-            "status": "transcribed",
-            "text": text,
-            "language": result.get("language") or language or "",
-            "model": result.get("model") or model,
-            "elapsed_ms": result.get("elapsed_ms") or round((time.monotonic() - started) * 1000),
-        }
+        errors: list[str] = []
+        language = _asr_language()
+        for index, target in enumerate(targets):
+            model = _asr_model(fallback=bool(target["fallback"]))
+            payload, boundary = multipart_audio_body(normalized_path, model, language)
+            headers = {
+                "User-Agent": USER_AGENT,
+                "Accept": "application/json",
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+                "Content-Length": str(len(payload)),
+            }
+            api_key = _asr_api_key(fallback=bool(target["fallback"]))
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            request = Request(target["endpoint"], data=payload, method="POST", headers=headers)
+            timeout = _asr_timeout(fallback=bool(target["fallback"]))
+            started = time.monotonic()
+            has_next = index + 1 < len(targets)
+            try:
+                with urlopen(request, timeout=timeout) as response:
+                    raw = response.read(2_000_000)
+            except HTTPError as error:
+                # Do not copy arbitrary response bodies into the public-link
+                # package: they may contain signed URLs or service details.
+                retryable = error.code in {408, 425, 429} or error.code >= 500
+                if has_next and retryable:
+                    errors.append(f"{target['route']}:HTTP {error.code}")
+                    continue
+                raise RuntimeError(f"本地 ASR 请求失败：HTTP {error.code}") from None
+            except (URLError, TimeoutError, socket.timeout) as error:
+                message = f"{target['route']}:{type(error).__name__}"
+                if has_next:
+                    errors.append(message)
+                    continue
+                suffix = f"；已尝试回退：{'、'.join(errors)}" if errors else ""
+                raise RuntimeError(f"本地 ASR 服务不可达或超时：{message}{suffix}") from None
+            try:
+                result = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                result = {"text": raw.decode("utf-8", errors="replace")}
+            if not isinstance(result, dict):
+                if has_next:
+                    errors.append(f"{target['route']}:invalid_json")
+                    continue
+                raise RuntimeError("本地 ASR 返回格式不是 JSON 对象")
+            text = str(result.get("text") or "").strip()
+            if not text:
+                if has_next:
+                    errors.append(f"{target['route']}:empty_response")
+                    continue
+                raise RuntimeError("本地 ASR 返回为空")
+            return {
+                "status": "transcribed",
+                "text": text,
+                "language": result.get("language") or language or "",
+                "model": result.get("model") or model,
+                "route": target["route"],
+                "elapsed_ms": result.get("elapsed_ms") or round((time.monotonic() - started) * 1000),
+            }
+        raise RuntimeError(f"本地 ASR 回退失败：{'、'.join(errors)}")
     finally:
         if temp_root is not None:
             temp_root.cleanup()
@@ -2013,6 +2343,7 @@ def write_package(root: Path, package_dir: Path, article: dict[str, Any], html: 
         (package_dir / "transcript.md").write_text(transcript_markdown, encoding="utf-8")
     media = article.get("media", {"images": [], "videos": [], "audios": []})
     if download:
+        ensure_browser_cookies()
         download_images(media, package_dir, article.get("resolved_url") or article.get("url", ""))
     # Persist the post-download manifest in article.json as well as media.json.
     # Previously article.json was written first, so it incorrectly reported
@@ -2312,7 +2643,7 @@ def process(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Capture and understand public URLs")
     parser.add_argument("urls", nargs="+", help="one or more public http(s) URLs")
-    parser.add_argument("--root", default=os.environ.get("PUBLIC_LINK_KNOWLEDGE_DIR", DEFAULT_ROOT))
+    parser.add_argument("--root", default=os.environ.get("RONNIE_PUBLIC_KNOWLEDGE_DIR", DEFAULT_ROOT))
     parser.add_argument("--no-analyze", action="store_true", help="only capture and save source content")
     parser.add_argument("--download-images", action="store_true", help="download at most 30 referenced images")
     parser.add_argument("--download-audio", action="store_true", help="download/extract the first usable audio stream from a supported video page")
