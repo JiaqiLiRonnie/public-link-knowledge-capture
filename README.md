@@ -97,6 +97,42 @@ media/             # 用户请求或转写链路实际下载的媒体
 
 `partial` 表示只拿到部分可靠内容，例如标题、简介、封面或网页壳；`blocked` 表示平台拦截或登录/验证阻断；`needs_browser` 表示当前浏览器回退不可用或失败。只有得到可读正文，或视频得到非空语音转写，才会被标记为完整捕获。
 
+## 抖音抓取（风控与绕过）
+
+抖音 web 端对未登录 / 自动化访问限制较严，`capture_public_link.py` 的常规路径可能返回 `partial`：
+视频页停在「视频数据加载中」，或 detail 接口被 **Argus 风控**拒绝（先 `Uifid Not Found`，
+补 `uifid` 后转为 `Signature Not Found`，需要 `a_bogus` 签名 + 设备指纹一致）。
+
+`scripts/douyin_tools.py` 用**移动 UA 渲染真实页面**绕过上述限制，作为兜底：
+
+```bash
+# 短链 → aweme_id
+python3 scripts/douyin_tools.py resolve "https://v.douyin.com/XXXX/"
+
+# 移动 UA 渲染，拿标题 / 作者 / 数据
+python3 scripts/douyin_tools.py render <aweme_id>
+
+# 抠出完整文案（含 emoji、换行；桌面页折叠的部分）
+python3 scripts/douyin_tools.py desc <aweme_id>
+
+# 渲染 + 取播放地址 + 下载 + ffmpeg 归一化 + ASR 口播转写
+python3 scripts/douyin_tools.py full <aweme_id>
+
+# 打开作者主页，拦截页面自身的 post 接口，批量列出作品
+python3 scripts/douyin_tools.py author <sec_uid>
+```
+
+已知边界：
+
+- **图片 / 视频 CDN 是登录门槛**：下载需要 Netscape 格式的登录 cookie jar，路径由
+  `PUBLIC_LINK_COOKIE_FILE` 指定（默认 `~/.public-link-knowledge/cookies.txt`）。
+  另外抖音 CDN 会重置 urllib 的非浏览器 TLS 指纹（`Errno 54`），媒体下载走 `curl` 才通。
+- **作者主页 web 端有上限**：未登录态通常只放 15 条，页面提示「打开抖音看更多内容」，
+  其余需 App / 登录态；`max_cursor` 翻页因签名绑定参数而失败。
+- **yt-dlp 需要"新鲜 cookie"**：本机 cookie jar 过期后，对抖音会报
+  `Fresh cookies (not necessarily logged in) are needed`，此时改用 `douyin_tools.py`。
+- 这些是平台对抗性技巧，可能随抖音改版失效；脚本会如实返回结果，不会伪造内容。
+
 ## 路由与已知边界
 
 捕获顺序是：普通 HTTP → Python Playwright → Chrome/Chromium CLI/CDP → 带诊断信息的部分结果。

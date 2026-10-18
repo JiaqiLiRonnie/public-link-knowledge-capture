@@ -53,6 +53,27 @@ model. This skill keeps the original image files and their order but does not
 make an OCR engine a required dependency. Use `--download-images` when the
 images need to be handed to a vision-capable model.
 
+## Douyin: when the page won't render
+
+Douyin's web API is behind Argus (`Uifid`/`a_bogus` device checks). When the
+normal capture returns `partial` with a "视频数据加载中" shell, fall back to
+`scripts/douyin_tools.py`, which renders with a **mobile UA** (this still works
+when the desktop page does not):
+
+- `douyin_tools.py resolve <short-url>` — 短链 → `aweme_id` (`video`/`note`).
+- `douyin_tools.py desc <aweme_id>` — recover the full caption (the desktop page
+  folds it behind "展开"; the mobile page's embedded `desc` is complete).
+- `douyin_tools.py full <aweme_id>` — render + fetch `play_addr` + download +
+  ffmpeg → 16 kHz mono wav → ASR for the spoken transcript.
+- `douyin_tools.py author <sec_uid>` — open the author page, intercept its own
+  `aweme/post` XHR, and list the works (web shows ~15; more needs the App).
+
+Media downloads need a Netscape cookie jar pointed at by
+`PUBLIC_LINK_COOKIE_FILE`, and must use `curl` (Douyin's CDN resets urllib's
+non-browser TLS fingerprint with `Errno 54`). `yt-dlp` fails on Douyin once its
+cookie jar goes stale (`Fresh cookies ... are needed`); prefer `douyin_tools.py`
+then. These are adversarial techniques and may break as Douyin changes.
+
 ## Reusing a captured package in later sessions
 
 When another session should use an existing capture, give it the absolute local path to `article.md` and tell it to read the local package without revisiting the source. Do not paste the original public URL into that handoff prompt: an installation-level trigger may intentionally run capture whenever an explicit public URL appears.
