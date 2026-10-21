@@ -1,5 +1,7 @@
 # Public Link Knowledge Capture
 
+**[English](README_EN.md)** | **[中文说明](README.md)**
+
 一个面向 Codex/Agent 的公开链接捕获 skill：把微信公众号、小红书、抖音、X、Bilibili、微信视频号预览和普通网页保存为可复用的本地知识包。
 
 当前版本的重点是：
