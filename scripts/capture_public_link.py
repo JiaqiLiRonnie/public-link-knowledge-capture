@@ -320,8 +320,16 @@ def platform_for(url: str) -> str:
         return "douyin"
     if host in {"x.com", "www.x.com", "twitter.com", "www.twitter.com"}:
         return "x"
+    if "reddit.com" in host or host == "redd.it":
+        return "reddit"
+    if "youtube.com" in host or host == "youtu.be":
+        return "youtube"
     if host in {"b23.tv", "www.b23.tv"} or "bilibili.com" in host:
         return "bilibili"
+    if host == "github.com" or host.endswith(".github.com"):
+        return "github"
+    if host == "news.ycombinator.com":
+        return "hackernews"
     return "web"
 
 
@@ -1317,6 +1325,8 @@ def should_use_browser(url: str, platform: str, html: str, article: dict[str, An
             len(str(article.get("text") or "")) < 300
             and not article.get("media", {}).get("videos")
         )
+    if platform == "reddit":
+        return article.get("capture_status") in {"partial", "blocked"} or len(str(article.get("text") or "")) < 100
     if platform != "douyin":
         return False
     resolved = article.get("resolved_url") or url

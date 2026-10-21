@@ -16,6 +16,12 @@ class CaptureSmokeTests(unittest.TestCase):
             "https://xhslink.cn/o/example": "xiaohongshu",
             "https://www.douyin.com/video/123": "douyin",
             "https://x.com/example/status/123": "x",
+            "https://www.reddit.com/r/MachineLearning/comments/123/": "reddit",
+            "https://redd.it/123": "reddit",
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ": "youtube",
+            "https://youtu.be/dQw4w9WgXcQ": "youtube",
+            "https://github.com/openai/codex": "github",
+            "https://news.ycombinator.com/item?id=123": "hackernews",
             "https://www.bilibili.com/video/BV1abc": "bilibili",
             "https://example.org/page": "web",
         }
