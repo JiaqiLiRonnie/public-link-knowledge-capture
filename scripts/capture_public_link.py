@@ -1377,7 +1377,7 @@ def is_bilibili_video_url(url: str) -> bool:
 def has_supported_audio_source(article: dict[str, Any]) -> bool:
     """Identify pages for which an audio provider can reasonably be tried."""
     platform = str(article.get("platform") or "")
-    if platform not in {"douyin", "xiaohongshu", "bilibili", "x"}:
+    if platform not in {"douyin", "xiaohongshu", "bilibili", "x", "youtube"}:
         return False
     media = article.get("media", {}) or {}
     if media.get("videos") or media.get("audios"):
@@ -1413,6 +1413,196 @@ def video_content_requires_review(
             for item in media.get("images", [])
         )
     return False
+
+
+
+def _json_object_after(text: str, marker: str) -> dict[str, Any]:
+    """Return the first balanced JSON object at/after ``marker``.
+
+    Reddit/YouTube pages embed their data as JSON inside <script> tags;
+    a plain regex cannot stop at the right closing brace, so scan with
+    string/escape awareness instead. Returns {} when nothing parses.
+    """
+    start = text.find(marker)
+    if start < 0:
+        return {}
+    brace = text.find("{", start)
+    if brace < 0:
+        return {}
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(brace, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    parsed = json.loads(text[brace : index + 1])
+                except json.JSONDecodeError:
+                    return {}
+                return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _as_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("name", "text", "title"):
+            if isinstance(value.get(key), str) and value[key].strip():
+                return str(value[key]).strip()
+    return ""
+
+
+def _reddit_extract(soup: Any, html: str) -> dict[str, str]:
+    """Parse a server-rendered Reddit post page.
+
+    Covers the current <shreddit-post>/<shreddit-comment> web components
+    and the older data-testid containers. This is best-effort: Reddit
+    often returns a login/JS shell instead, in which case the caller keeps
+    the generic result and the browser fallback (already wired for
+    reddit in should_use_browser) can retry.
+    """
+    lines: list[str] = []
+    title = ""
+    author = ""
+    posts = soup.select("shreddit-post")
+    if not posts:
+        posts = soup.select("[data-testid='post-container']")
+    for post in posts[:1]:
+        title = (
+            post.get("post-title")
+            or post.get("postTitle")
+            or _as_text(post.select_one("h1"))
+            or title
+        )
+        author = post.get("author") or author
+        subreddit = post.get("subreddit-name") or post.get("subredditName") or ""
+        header = " / ".join(part for part in (subreddit, author) if part)
+        if header:
+            lines.append(header)
+        body = clean_text(post) if hasattr(post, "select") else ""
+        # clean_text strips script/style/nav etc. from the node in place;
+        # keep only the post body, not repeated header text, by dropping
+        # a leading line that duplicates the title.
+        body_lines = [line for line in body.splitlines() if line.strip()]
+        if body_lines and title and body_lines[0].strip() == title.strip():
+            body_lines = body_lines[1:]
+        lines.extend(body_lines)
+    comments: list[str] = []
+    for comment in soup.select("shreddit-comment"):
+        comment_author = comment.get("author") or ""
+        comment_text = clean_text(comment) if hasattr(comment, "select") else ""
+        comment_lines = [line for line in comment_text.splitlines() if line.strip()]
+        if comment_lines:
+            comments.append(f"{comment_author}: {' '.join(comment_lines)}" if comment_author else " ".join(comment_lines))
+    if not comments:
+        for node in soup.select("[data-testid='comment']"):
+            comment_text = clean_text(node) if hasattr(node, "select") else ""
+            if comment_text:
+                comments.append(" ".join(comment_text.splitlines()))
+    if comments:
+        lines.append("")
+        lines.append("Comments:")
+        lines.extend(f"- {comment}" for comment in comments[:50])
+    text = "\n".join(line for line in lines if line.strip()).strip()
+    return {"title": str(title or "").strip(), "author": str(author or "").strip(), "text": text}
+
+
+def _youtube_extract(html: str) -> dict[str, str]:
+    """Parse ytInitialPlayerResponse.videoDetails from a watch page.
+
+    This yields the video's own title/author/description/thumbnail from
+    YouTube's embedded player data -- not a transcript. A transcript
+    still needs the audio pipeline (yt-dlp/Whisper) downstream.
+    """
+    player = _json_object_after(html, "ytInitialPlayerResponse")
+    details = player.get("videoDetails") if isinstance(player, dict) else None
+    if not isinstance(details, dict):
+        details = _json_object_after(html, '"videoDetails"')
+    if not isinstance(details, dict) or not details:
+        return {"title": "", "author": "", "text": "", "thumbnail": ""}
+    title = _as_text(details.get("title"))
+    author = _as_text(details.get("author"))
+    description = _as_text(details.get("shortDescription"))
+    meta_lines = []
+    if details.get("lengthSeconds"):
+        meta_lines.append(f"Length: {details.get('lengthSeconds')} seconds")
+    if details.get("viewCount"):
+        meta_lines.append(f"Views: {details.get('viewCount')}")
+    thumbnail = ""
+    thumbnails = details.get("thumbnail", {}).get("thumbnails") if isinstance(details.get("thumbnail"), dict) else None
+    if isinstance(thumbnails, list) and thumbnails:
+        thumbnail = _as_text(thumbnails[-1].get("url")) if isinstance(thumbnails[-1], dict) else ""
+    text = "\n\n".join(part for part in (description, "\n".join(meta_lines)) if part).strip()
+    return {"title": title, "author": author, "text": text, "thumbnail": thumbnail}
+
+
+def _github_extract(soup: Any, url: str) -> dict[str, str]:
+    """Parse GitHub repo / issue / PR / blob pages from their HTML."""
+    parts = [part for part in urlparse(url).path.split("/") if part]
+    lines: list[str] = []
+    if len(parts) >= 4 and parts[2] in {"issues", "pull"}:
+        for comment in soup.select(".comment-body, .js-comment-body"):
+            comment_text = clean_text(comment) if hasattr(comment, "select") else ""
+            if comment_text:
+                lines.append(comment_text)
+    elif len(parts) >= 4 and parts[2] == "blob":
+        code_lines = []
+        for line in soup.select(".blob-code-inner, .react-blob-code-line"):
+            code_lines.append(line.get_text("", strip=False).rstrip())
+        lines.extend(code_lines)
+    else:
+        readme = soup.select_one("article.markdown-body")
+        if readme is not None:
+            lines.append(clean_text(readme))
+        topics = [node.get_text(" ", strip=True) for node in soup.select(".topic-tag")]
+        topics = [topic for topic in topics if topic]
+        if topics:
+            lines.append(f"Topics: {', '.join(topics)}")
+    author = parts[0] if parts else ""
+    return {"title": "", "author": author, "text": "\n\n".join(part for part in lines if part.strip()).strip()}
+
+
+def _hackernews_extract(soup: Any, url: str) -> dict[str, str]:
+    """Parse a Hacker News item page (story + comments) or front page."""
+    lines: list[str] = []
+    title = ""
+    author = ""
+    title_node = soup.select_one(".titleline a")
+    if title_node is not None:
+        title = title_node.get_text(" ", strip=True)
+    author_node = soup.select_one(".hnuser")
+    if author_node is not None:
+        author = author_node.get_text(" ", strip=True)
+    if "/item" in urlparse(url).path:
+        for comment_row in soup.select(".athing.comtr"):
+            comment_author_node = comment_row.select_one(".hnuser")
+            comment_node = comment_row.select_one(".comment")
+            comment_text = clean_text(comment_node) if comment_node is not None else ""
+            comment_lines = [line for line in comment_text.splitlines() if line.strip()]
+            if comment_lines:
+                comment_author = comment_author_node.get_text(" ", strip=True) if comment_author_node is not None else ""
+                lines.append(f"{comment_author}: {' '.join(comment_lines)}" if comment_author else " ".join(comment_lines))
+    else:
+        for story in soup.select(".athing"):
+            story_title = story.select_one(".titleline a")
+            if story_title is not None:
+                lines.append(story_title.get_text(" ", strip=True))
+    return {"title": title, "author": author, "text": "\n".join(lines).strip()}
 
 
 def parse_page(url: str, html: str, platform: str) -> dict[str, Any]:
@@ -1456,6 +1646,33 @@ def parse_page(url: str, html: str, platform: str) -> dict[str, Any]:
     if len(text) < 80 and description and description not in text:
         text = (text + "\n\n" + description).strip()
     media = media_manifest(soup, content_node, ld, url, platform=platform)
+    # Platform-specific extraction: the generic article/main fallback
+    # above only sees navigation chrome on these pages, so prefer the
+    # platform's own structure when it yields more real content.
+    platform_override: dict[str, str] = {"title": "", "author": "", "text": "", "thumbnail": ""}
+    if platform == "reddit":
+        platform_override = _reddit_extract(soup, html)
+    elif platform == "youtube":
+        platform_override = _youtube_extract(html)
+    elif platform == "github":
+        platform_override = _github_extract(soup, url)
+    elif platform == "hackernews":
+        platform_override = _hackernews_extract(soup, url)
+    if platform_override.get("text") and len(platform_override["text"]) >= max(40, len(text) // 2):
+        # Platform structure wins when it is at least half as long as the
+        # generic fallback: the generic version often has the same words
+        # but split across navigation lines (e.g. HN author on its own
+        # line), while a much longer generic body is kept as-is.
+        text = platform_override["text"]
+    if platform_override.get("title"):
+        title = platform_override["title"]
+    if platform_override.get("author"):
+        author = platform_override["author"]
+    if platform_override.get("thumbnail"):
+        thumbnail_url = normalize_media_url(platform_override["thumbnail"], url)
+        existing = {str(item.get("url") or "") for item in media.get("images", [])}
+        if thumbnail_url and thumbnail_url not in existing:
+            media.setdefault("images", []).append({"url": thumbnail_url, "downloaded": False})
 
     lower = f"{title}\n{text}".lower()
     blocked_terms = ("安全验证", "请先登录", "登录后查看", "访问过于频繁", "captcha", "access denied", "滑块验证")
@@ -1818,9 +2035,9 @@ def ytdlp_command() -> list[str]:
 
 
 def download_audio_with_ytdlp(article: dict[str, Any], package_dir: Path) -> dict[str, Any]:
-    """Use yt-dlp as an optional audio-only fallback for Bilibili and X."""
+    """Use yt-dlp as an optional audio-only fallback for Bilibili, X and YouTube."""
     platform = str(article.get("platform") or "")
-    if platform not in {"bilibili", "x"}:
+    if platform not in {"bilibili", "x", "youtube"}:
         return {"status": "not_found", "error": "当前平台未启用 yt-dlp 音频回退"}
     command = ytdlp_command()
     if not command:
@@ -2304,7 +2521,7 @@ def download_audio_media(
     )
     if video_result.get("status") == "downloaded":
         return video_result
-    if str(article.get("platform") or "") in {"bilibili", "x"}:
+    if str(article.get("platform") or "") in {"bilibili", "x", "youtube"}:
         external_result = download_audio_with_ytdlp(article, package_dir)
     else:
         external_result = {"status": "not_found", "error": ""}
