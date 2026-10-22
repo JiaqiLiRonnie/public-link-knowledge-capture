@@ -24,6 +24,24 @@ def norm(u):
     return (u or "").strip().rstrip("/").split("?")[0]
 
 
+def resolved_in_inbox():
+    """URLs已有人工补录且状态为已抓取 —— 索引里遗留的失败行不再打扰重试列表。"""
+    done = set()
+    path = os.path.join(INBOX, "inbox_extra.jsonl")
+    if not os.path.isfile(path):
+        return done
+    for line in open(path, encoding="utf-8"):
+        if not line.strip():
+            continue
+        try:
+            d = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if d.get("status") == "已抓取":
+            done.add(norm(d.get("url")))
+    return done
+
+
 def pending(include_partial):
     last = {}
     path = os.path.join(KNOWLEDGE, "index.jsonl")
@@ -35,7 +53,8 @@ def pending(include_partial):
                 continue
             last[norm(d.get("url") or d.get("resolved_url"))] = d  # 同 URL 以最后一条为准
     bad = {"failed", "needs_browser"} | ({"partial"} if include_partial else set())
-    return [d for d in last.values() if d.get("capture_status") in bad]
+    done = resolved_in_inbox()
+    return [d for d in last.values() if d.get("capture_status") in bad and norm(d.get("url")) not in done]
 
 
 def main():

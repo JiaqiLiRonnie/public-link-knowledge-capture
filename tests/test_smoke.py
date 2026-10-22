@@ -124,6 +124,66 @@ class CaptureSmokeTests(unittest.TestCase):
         )
         self.assertEqual(shell["capture_status"], "partial")
 
+    def test_bot_wall_is_not_reported_as_extracted(self):
+        # A challenge page is a few hundred characters of boilerplate, which
+        # used to clear the old "text < 120" bar and be reported as a complete
+        # capture. It must be blocked so the inbox keeps it in the retry list.
+        wall = capture.parse_page(
+            "https://www.reddit.com/r/codex/comments/1w771mv/x/",
+            "<html><head><title>Reddit - Prove your humanity</title></head><body>"
+            "<p>Prove your humanity</p><p>We're committed to safety and security. "
+            "But not for bots. Complete the challenge below and let us know you're "
+            "a real person.</p><p>User Agreement Privacy Policy Content Policy Help</p>"
+            "</body></html>",
+            "reddit",
+        )
+        self.assertEqual(wall["capture_status"], "blocked")
+
+    def test_append_index_upgrades_a_stale_failure(self):
+        # A URL captured once as failed stayed failed forever because
+        # append_index returned early for any known URL; a later successful
+        # re-capture never reached the index.
+        import json
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            article = {
+                "url": "https://example.org/page",
+                "resolved_url": "https://example.org/page",
+                "platform": "web",
+                "title": "Example",
+                "author": "",
+                "capture_status": "failed",
+            }
+            capture.append_index(root, article, root / "web" / "pkg")
+            article["capture_status"] = "extracted"
+            capture.append_index(root, article, root / "web" / "pkg")
+            lines = (root / "index.jsonl").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(lines), 1)
+            self.assertEqual(json.loads(lines[0])["capture_status"], "extracted")
+
+    def test_append_index_does_not_downgrade(self):
+        import json
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            article = {
+                "url": "https://example.org/page",
+                "resolved_url": "https://example.org/page",
+                "platform": "web",
+                "title": "Example",
+                "author": "",
+                "capture_status": "extracted",
+            }
+            capture.append_index(root, article, root / "web" / "pkg")
+            article["capture_status"] = "failed"
+            capture.append_index(root, article, root / "web" / "pkg")
+            lines = (root / "index.jsonl").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(lines), 1)
+            self.assertEqual(json.loads(lines[0])["capture_status"], "extracted")
+
 
 if __name__ == "__main__":
     unittest.main()
