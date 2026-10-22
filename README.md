@@ -159,6 +159,21 @@ For each captured target, a standardized artifact bundle is preserved under `~/.
 
 ---
 
+## 📥 Share Inbox (optional companion)
+
+Captured links shouldn't scatter across chat logs. `tools/inbox/` builds a browsable dashboard from three sources (knowledge-package index + manual entries + pending queue) and emits **CSV / XLSX / HTML** — the web view supports search, filters, read-marks and light/dark themes.
+
+```bash
+python3 tools/inbox/build_inbox.py          # writes inbox.csv / inbox.xlsx / inbox.html
+python3 -m http.server 8787 --bind 127.0.0.1 --directory ~/.public-link-knowledge/inbox
+```
+
+Full guide: [`tools/inbox/README.md`](tools/inbox/README.md).
+
+**Why it matters**: after each capture an agent appends one JSON line to `inbox_extra.jsonl`; the user then scans one page instead of scrolling a chat. Local-only data (`inbox_extra.jsonl`) is git-ignored.
+
+---
+
 ## 🤝 Contributing & License
 
 Contributions, issues, and feature requests are welcome!
