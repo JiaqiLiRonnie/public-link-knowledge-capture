@@ -8,5 +8,6 @@ cookies.txt
 public-link.env
 asr.env
 public-links/
-inbox/
+/inbox/
+!tools/inbox/
 pending-reviews.md
