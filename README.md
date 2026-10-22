@@ -156,6 +156,19 @@ For each captured target, a standardized artifact bundle is preserved under `~/.
 - **Mobile Viewport Emulation**: Dynamic platforms (e.g., Douyin, RED) collapse long descriptions or block desktop headless user-agents. The toolkit (`scripts/douyin_tools.py`) leverages mobile viewport and iPhone UA emulation to extract uncollapsed descriptions and authentic media streams.
 - **Client-Side Hydration**: Awaits JavaScript hydration for client-rendered frameworks (like Reddit's custom web components).
 - **Safe Network Guardrails**: Only accepts public `http(s)` URLs. Validates DNS resolutions and redirects to prevent SSRF against localhost, link-local, or private subnets.
+- **Proxy & Forced Render**: `--proxy http://host:port` (or `PUBLIC_LINK_PROXY`) routes both the HTTP fetch and Playwright through a proxy, so a page that fails with a bare `URLError` outside the proxy region can still be captured; `--browser` forces a render for JavaScript-only pages that only return a navigation shell.
+- **Honest Status**: Login walls and bot challenges (e.g. "Prove your humanity") are reported as `blocked`, and a short shell page as `partial` — never as a complete article. `index.jsonl` keeps one row per URL and upgrades it in place when a later capture is stronger, so a page that failed once does not stay failed forever.
+- **PDF Links**: A direct `application/pdf` URL is read by downloading it and extracting text with PyMuPDF, falling back to poppler `pdftotext`.
+
+---
+
+## 📄 Local Documents (optional companion)
+
+`tools/ingest_doc.py` archives a document the user hands over directly (docx / pdf / pptx / xlsx / md): the original file is copied untouched into `document/<hash>-<slug>/original.<ext>`, its text is converted to `article.md` (pandoc, PyMuPDF/`pdftotext`, or openpyxl), a `meta.json` and `index.jsonl` row are written, and the entry is added to the share inbox when `tools/inbox/inbox_add.py` exists.
+
+```bash
+python3 tools/ingest_doc.py ~/Downloads/report.docx --title "季度报告" --author someone
+```
 
 ---
 

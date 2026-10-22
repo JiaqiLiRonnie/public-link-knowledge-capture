@@ -30,8 +30,8 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from html import unescape
-from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
-from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
+from urllib.parse import parse_qs, unquote, urljoin, urlparse, urlunparse
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener, urlopen
 
 try:
     from bs4 import BeautifulSoup
@@ -141,6 +141,7 @@ USER_AGENT = (
 )
 PUBLIC_HOST_CACHE: set[str] = set()
 MAX_HTML_BYTES = 20_000_000
+MAX_PDF_BYTES = 120_000_000
 BROWSER_NAV_TIMEOUT_MS = 45_000
 BROWSER_SETTLE_MS = 2_500
 BROWSER_MEDIA_WAIT_MS = 3_500
@@ -297,6 +298,24 @@ class PublicRedirectHandler(HTTPRedirectHandler):
 
 
 PUBLIC_OPENER = build_opener(PublicRedirectHandler())
+
+# Overseas sources are unreachable from this host without the local Clash
+# proxy, and the failure surfaces as a bare URLError that looks like a dead
+# page. `--proxy` (or PUBLIC_LINK_PROXY) routes both the HTTP fetch and the
+# Playwright browser through the proxy so a blocked-by-network capture can be
+# retried without editing the script.
+PROXY_SERVER = os.environ.get("PUBLIC_LINK_PROXY", "").strip()
+
+
+def configure_proxy(value: str) -> None:
+    global PUBLIC_OPENER, PROXY_SERVER
+    PROXY_SERVER = (value or "").strip()
+    if PROXY_SERVER:
+        PUBLIC_OPENER = build_opener(
+            PublicRedirectHandler(),
+            ProxyHandler({"http": PROXY_SERVER, "https": PROXY_SERVER}),
+        )
+
 
 
 def public_urlopen(request: Request | str, timeout: float):
@@ -577,11 +596,14 @@ def capture_with_playwright(url: str, platform: str) -> tuple[str, str, str, dic
 
     browser = None
     context = None
+    launch_options: dict[str, Any] = {}
+    if PROXY_SERVER:
+        launch_options["proxy"] = {"server": PROXY_SERVER}
     try:
         with sync_playwright() as playwright:
             launch_error = ""
             try:
-                browser = playwright.chromium.launch(headless=True)
+                browser = playwright.chromium.launch(headless=True, **launch_options)
             except Exception as error:
                 launch_error = type(error).__name__
                 executable = browser_executable()
@@ -590,7 +612,7 @@ def capture_with_playwright(url: str, platform: str) -> tuple[str, str, str, dic
                         f"Playwright Chromium 启动失败（{launch_error}），且未找到本机 Chrome/Chromium"
                     ) from None
                 try:
-                    browser = playwright.chromium.launch(headless=True, executable_path=executable)
+                    browser = playwright.chromium.launch(headless=True, executable_path=executable, **launch_options)
                 except Exception as fallback_error:
                     raise BrowserCaptureError(
                         f"Playwright Chromium 启动失败（{launch_error}/{type(fallback_error).__name__}）"
@@ -1675,7 +1697,12 @@ def parse_page(url: str, html: str, platform: str) -> dict[str, Any]:
             media.setdefault("images", []).append({"url": thumbnail_url, "downloaded": False})
 
     lower = f"{title}\n{text}".lower()
-    blocked_terms = ("安全验证", "请先登录", "登录后查看", "访问过于频繁", "captcha", "access denied", "滑块验证")
+    blocked_terms = (
+        "安全验证", "请先登录", "登录后查看", "访问过于频繁", "captcha", "access denied", "滑块验证",
+        "prove your humanity", "not for bots", "complete the challenge below", "are you a robot",
+        "just a moment", "enable javascript and cookies to continue", "javascript is not available",
+        "unusual traffic from your computer network", "verify you are human",
+    )
     blocked_hint = any(term.lower() in lower for term in blocked_terms)
     homepage_shell = platform in {"xiaohongshu", "douyin", "x", "bilibili"} and not urlparse(url).path.strip("/")
     if blocked_hint and len(text) < 300:
@@ -2583,18 +2610,21 @@ def write_package(root: Path, package_dir: Path, article: dict[str, Any], html: 
         (package_dir / "capture-error.txt").write_text(error + "\n", encoding="utf-8")
 
 
+_CAPTURE_STATUS_RANK = {"extracted": 3, "partial": 2, "needs_browser": 1, "failed": 1}
+
+
 def append_index(root: Path, article: dict[str, Any], package_dir: Path) -> None:
+    """Add a capture record, or upgrade an existing row for the same URL.
+
+    A URL captured once as ``failed`` used to stay ``failed`` forever: the old
+    code returned early on any known URL, so a later successful re-capture never
+    reached the index and ``inbox_retry.py`` kept listing pages that were already
+    archived. Now a stronger status replaces the stored row in place; a re-run
+    that is not stronger still leaves the row alone (no duplicate lines).
+    """
     root.mkdir(parents=True, exist_ok=True)
     path = root / "index.jsonl"
-    existing_urls: set[str] = set()
-    if path.exists():
-        for line in path.read_text(encoding="utf-8").splitlines():
-            try:
-                existing_urls.add(str(json.loads(line).get("url", "")))
-            except json.JSONDecodeError:
-                continue
-    if article.get("url") in existing_urls:
-        return
+    url = article.get("url")
     record = {
         "url": article.get("url"),
         "resolved_url": article.get("resolved_url"),
@@ -2605,8 +2635,36 @@ def append_index(root: Path, article: dict[str, Any], package_dir: Path) -> None
         "package": str(package_dir),
         "captured_at": article.get("captured_at", now()),
     }
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    new_rank = _CAPTURE_STATUS_RANK.get(str(record.get("capture_status")), 0)
+    upgraded = False
+    seen = False
+    out: list[str] = []
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            out.append(line)
+            continue
+        if not isinstance(entry, dict) or entry.get("url") != url:
+            out.append(line)
+            continue
+        seen = True
+        old_rank = _CAPTURE_STATUS_RANK.get(str(entry.get("capture_status")), 0)
+        if new_rank > old_rank:
+            entry.update({key: value for key, value in record.items() if value not in (None, "")})
+            out.append(json.dumps(entry, ensure_ascii=False))
+            upgraded = True
+        else:
+            out.append(json.dumps(entry, ensure_ascii=False))
+    if seen and not upgraded:
+        # Keep the file byte-identical when nothing improved.
+        return
+    if not seen:
+        out.append(json.dumps(record, ensure_ascii=False))
+    tmp = path.with_suffix(".jsonl.tmp")
+    tmp.write_text("\n".join(out) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def output_context(article: dict[str, Any], package_dir: Path, processing: dict[str, Any], analysis_data: dict[str, Any] | None) -> dict[str, Any]:
@@ -2652,6 +2710,88 @@ def output_context(article: dict[str, Any], package_dir: Path, processing: dict[
     }
 
 
+def _pdf_text_with_poppler(raw: bytes) -> str:
+    """Fallback extractor: ship the bytes to `pdftotext -` and read stdout."""
+    executable = shutil.which("pdftotext")
+    if not executable:
+        raise CaptureError("partial", "PDF 需要 PyMuPDF 或 poppler 的 pdftotext")
+    with tempfile.TemporaryDirectory(prefix="public-link-pdf-") as tmp:
+        source = Path(tmp) / "source.pdf"
+        source.write_bytes(raw)
+        completed = subprocess.run(
+            [executable, "-layout", "-enc", "UTF-8", str(source), "-"],
+            capture_output=True,
+            timeout=120,
+        )
+    if completed.returncode != 0:
+        raise CaptureError("partial", f"pdftotext 失败：{completed.stderr.decode('utf-8', 'replace')[:200]}")
+    return completed.stdout.decode("utf-8", "replace")
+
+
+def capture_pdf(url: str, platform: str) -> dict[str, Any]:
+    """Extract text from a PDF link so an attachment page is not a dead end.
+
+    Government documents and papers are often served as `application/pdf`
+    from a CMS URL; the HTML fetcher correctly refuses that body, but the
+    link itself is perfectly readable. PyMuPDF is used when installed, and
+    the poppler `pdftotext` CLI otherwise, since the capture environment does
+    not always carry the Python package.
+    """
+    try:
+        with public_urlopen(Request(url, headers={"User-Agent": USER_AGENT}), timeout=60) as response:
+            raw = response.read(MAX_PDF_BYTES)
+            content_type = str(response.headers.get("Content-Type", "")).lower()
+    except HTTPError as error:
+        if error.code in {401, 403, 412, 429}:
+            raise CaptureError("blocked", f"PDF 访问被平台拦截：HTTP {error.code}") from None
+        raise CaptureError("failed", f"PDF 请求失败：HTTP {error.code}") from None
+    except (URLError, TimeoutError) as error:
+        raise CaptureError("failed", f"PDF 请求失败：{type(error).__name__}") from None
+    if not content_type.startswith("application/pdf") and not raw[:5].startswith(b"%PDF"):
+        raise CaptureError("failed", "下载内容不是 PDF")
+    title = ""
+    author = ""
+    pages_count = 0
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        fitz = None  # type: ignore[assignment]
+    if fitz is not None:
+        try:
+            document = fitz.open(stream=raw, filetype="pdf")
+        except Exception as error:
+            raise CaptureError("partial", f"PDF 解析失败：{type(error).__name__}") from None
+        try:
+            pages = [page.get_text("text") for page in document]
+            metadata = document.metadata or {}
+            title = str(metadata.get("title") or "").strip()
+            author = str(metadata.get("author") or "").strip()
+            pages_count = len(pages)
+        finally:
+            document.close()
+        text = "\n\n".join(page.strip() for page in pages if page.strip()).strip()
+    else:
+        text = _pdf_text_with_poppler(raw).strip()
+        pages_count = text.count("\f") + 1 if text else 0
+    if not title:
+        title = unquote(urlparse(url).path.rsplit("/", 1)[-1]) or "PDF 文档"
+    article = skeleton(url, platform, "extracted" if len(text) >= 200 else "partial", "")
+    article.update(
+        {
+            "title": unescape(title),
+            "author": author,
+            "text": text,
+            "excerpt": text[:1200],
+            "text_length": len(text),
+            "description": "",
+            "pdf_pages": pages_count,
+            "captured_at": now(),
+        }
+    )
+    article.pop("error", None)
+    return article
+
+
 def skeleton(url: str, platform: str, status: str, message: str) -> dict[str, Any]:
     return {
         "url": url,
@@ -2682,6 +2822,7 @@ def process(
     download_video: bool = False,
     transcribe_audio: bool = False,
     auto_transcribe: bool = False,
+    force_browser: bool = False,
 ) -> dict[str, Any]:
     platform = platform_for(url)
     package_dir = package_dir_for(root, platform, url)
@@ -2699,8 +2840,8 @@ def process(
             article["resolved_url"] = resolved_url
             if video_content_requires_review(platform, article.get("media", {}), resolved_url):
                 article["capture_status"] = "partial"
-            if should_use_browser(url, platform, html, article):
-                capture_attempts.append("http:challenge_or_short_shell")
+            if force_browser or should_use_browser(url, platform, html, article):
+                capture_attempts.append("forced:browser" if force_browser else "http:challenge_or_short_shell")
                 try:
                     browser_html, browser_url, browser_method, browser_capture = capture_with_browser(url, platform, resolved_url)
                     html = browser_html
@@ -2728,26 +2869,39 @@ def process(
                 capture_attempts.append("http:usable")
         except CaptureError as http_error:
             capture_attempts.append(f"http:failed:{http_error.status}")
-            if platform not in {"douyin", "bilibili"} or http_error.status == "rejected":
+            pdf_article = None
+            if "application/pdf" in str(http_error).lower():
+                try:
+                    pdf_article = capture_pdf(url, platform)
+                except CaptureError as pdf_error:
+                    capture_attempts.append(f"pdf:failed:{pdf_error.status}")
+                    pdf_article = skeleton(url, platform, pdf_error.status, str(pdf_error))
+                    capture_error = str(pdf_error)
+            if pdf_article is not None:
+                article = pdf_article
+                capture_method = "pdf"
+                capture_attempts.append("pdf:text")
+            elif platform not in {"douyin", "bilibili"} or http_error.status == "rejected":
                 raise
-            try:
-                browser_html, browser_url, browser_method, browser_capture = capture_with_browser(url, platform, url)
-                html = browser_html
-                article = parse_page(url, html, platform)
-                article["resolved_url"] = browser_url or url
-                merge_browser_media(article, browser_capture)
-                if video_content_requires_review(
-                    platform,
-                    article.get("media", {}),
-                    article.get("resolved_url") or url,
-                ):
-                    article["capture_status"] = "partial"
-                capture_method = browser_method
-                capture_attempts.append(f"{browser_method}:success")
-            except CaptureError as browser_error:
-                capture_attempts.append(f"browser:failed:{browser_error.status}")
-                article = skeleton(url, platform, browser_error.status, str(browser_error))
-                capture_error = str(browser_error)
+            else:
+                try:
+                    browser_html, browser_url, browser_method, browser_capture = capture_with_browser(url, platform, url)
+                    html = browser_html
+                    article = parse_page(url, html, platform)
+                    article["resolved_url"] = browser_url or url
+                    merge_browser_media(article, browser_capture)
+                    if video_content_requires_review(
+                        platform,
+                        article.get("media", {}),
+                        article.get("resolved_url") or url,
+                    ):
+                        article["capture_status"] = "partial"
+                    capture_method = browser_method
+                    capture_attempts.append(f"{browser_method}:success")
+                except CaptureError as browser_error:
+                    capture_attempts.append(f"browser:failed:{browser_error.status}")
+                    article = skeleton(url, platform, browser_error.status, str(browser_error))
+                    capture_error = str(browser_error)
         # Keep the original URL as the de-duplication key, but make redirects visible.
         package_dir = package_dir_for(root, platform, url, article.get("title", "") if article else "")
     except CaptureError as error:
@@ -2871,13 +3025,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Capture and understand public URLs")
     parser.add_argument("urls", nargs="+", help="one or more public http(s) URLs")
     parser.add_argument("--root", default=os.environ.get("PUBLIC_LINK_KNOWLEDGE_DIR", DEFAULT_ROOT))
+    parser.add_argument("--proxy", default=os.environ.get("PUBLIC_LINK_PROXY", ""),
+                        help="route HTTP + browser through this proxy, e.g. ")
     parser.add_argument("--no-analyze", action="store_true", help="only capture and save source content")
+    parser.add_argument("--browser", action="store_true", help="force a Playwright render (JS-only pages)")
     parser.add_argument("--download-images", action="store_true", help="download at most 30 referenced images")
     parser.add_argument("--download-audio", action="store_true", help="download/extract the first usable audio stream from a supported video page")
     parser.add_argument("--download-video", action="store_true", help="download the first usable video stream from a supported video page")
     parser.add_argument("--transcribe-audio", action="store_true", help="force audio normalization and transcription with the configured Qwen-compatible ASR endpoint")
     parser.add_argument("--no-transcribe-audio", action="store_true", help="skip automatic transcription for supported video pages")
     args = parser.parse_args()
+    configure_proxy(args.proxy)
     results: list[dict[str, Any]] = []
     exit_code = 0
     root = Path(args.root).expanduser().resolve()
@@ -2893,6 +3051,7 @@ def main() -> int:
                 download_video=args.download_video,
                 transcribe_audio=args.transcribe_audio,
                 auto_transcribe=not args.no_analyze and not args.no_transcribe_audio,
+                force_browser=args.browser,
             )
         except CaptureError as error:
             result = {"status": error.status, "error": str(error), "url": raw_url}
