@@ -113,6 +113,21 @@ export PUBLIC_LINK_ASR_API_KEY="sk-..."
 
 ---
 
+## 📥 分享收件箱（可选配套）
+
+抓到的链接不该散落在聊天记录里。`tools/inbox/` 把三个来源（知识包索引 + 手工补录 + 待办台账）合成一个可浏览看板，输出 **CSV / XLSX / HTML**——网页版支持搜索、筛选、已读标记、深浅色切换。
+
+```bash
+python3 tools/inbox/build_inbox.py          # 生成 inbox.csv / inbox.xlsx / inbox.html
+python3 -m http.server 8787 --bind 127.0.0.1 --directory ~/.public-link-knowledge/inbox
+```
+
+完整说明见 [`tools/inbox/README.md`](tools/inbox/README.md)。
+
+**为什么值得装**：Agent 每次抓完只需往 `inbox_extra.jsonl` 追加一行 JSON，用户就能在一个页面里扫完，而不是在聊天记录里翻链接。本地数据（`inbox_extra.jsonl`）已加入 `.gitignore`，不会误提交。
+
+---
+
 ## 许可证
 
 本项目基于 [MIT 许可证](LICENSE) 开源。
