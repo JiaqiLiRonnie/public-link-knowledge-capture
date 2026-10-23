@@ -2632,6 +2632,13 @@ def append_index(root: Path, article: dict[str, Any], package_dir: Path) -> None
         # Keep the file byte-identical when nothing improved.
         return
     if not seen:
+        # Record provenance once; later recaptures may upgrade status but keep the original source.
+        origin = {
+            "agent": os.environ.get("PUBLIC_LINK_AGENT", "").strip().lower(),
+            "channel": os.environ.get("PUBLIC_LINK_CHANNEL", "").strip().lower(),
+            "first_seen": record["captured_at"],
+        }
+        record.update({key: value for key, value in origin.items() if value})
         out.append(json.dumps(record, ensure_ascii=False))
     tmp = path.with_suffix(".jsonl.tmp")
     tmp.write_text("\n".join(out) + "\n", encoding="utf-8")
@@ -3005,7 +3012,15 @@ def main() -> int:
     parser.add_argument("--download-video", action="store_true", help="download the first usable video stream from a supported video page")
     parser.add_argument("--transcribe-audio", action="store_true", help="force audio normalization and transcription with the configured Qwen-compatible ASR endpoint")
     parser.add_argument("--no-transcribe-audio", action="store_true", help="skip automatic transcription for supported video pages")
+    parser.add_argument("--agent", default="",
+                        help="who is capturing (hermes/cc/codex/agy/grok/user); recorded in index.jsonl, or set PUBLIC_LINK_AGENT")
+    parser.add_argument("--channel", default="",
+                        help="where the link came from (wechat/manual/test/cron); recorded in index.jsonl, or set PUBLIC_LINK_CHANNEL")
     args = parser.parse_args()
+    if args.agent:
+        os.environ["PUBLIC_LINK_AGENT"] = args.agent
+    if args.channel:
+        os.environ["PUBLIC_LINK_CHANNEL"] = args.channel
     configure_proxy(args.proxy)
     results: list[dict[str, Any]] = []
     exit_code = 0

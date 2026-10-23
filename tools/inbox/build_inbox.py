@@ -27,6 +27,17 @@ SOURCE_CN = {"douyin": "抖音", "wechat": "公众号", "web": "网页", "x": "X
              "xiaohongshu": "小红书", "manual": "手工", "weixin": "微信",
              "bilibili": "B站", "reddit": "Reddit", "youtube": "YouTube",
              "github": "GitHub", "hackernews": "HN", "wechat_video": "视频号", "asr": "ASR"}
+AGENT_CN = {"hermes": "Hermes", "cc": "Claude Code", "claude": "Claude Code", "claude-code": "Claude Code",
+            "codex": "Codex", "agy": "agy", "antigravity": "agy", "grok": "Grok", "user": "用户"}
+CHANNEL_CN = {"wechat": "微信", "weixin": "微信", "manual": "手动", "test": "测试", "cron": "定时"}
+
+
+def label(value, table):
+    """来源 agent / 渠道的显示名；没记录的统一显示为空（看板上归入"未知"）。"""
+    v = (value or "").strip()
+    return table.get(v.lower(), v)
+
+
 STATUS_CN = {"extracted": "已抓取", "partial": "部分抓取", "failed": "抓取失败",
              "needs_browser": "需浏览器", "no_link": "待补链接", "tip": "提示词/要点", "manual": "手工记录"}
 
@@ -62,7 +73,10 @@ def load_index():
             print(f"警告: 知识库 index.jsonl 第{line_no}行不是 JSON 对象，已跳过")
             continue
         rows.append({
-            "date": (d.get("captured_at") or "")[:10],
+            # Use first_seen so retries do not make an old link look newly captured.
+            "date": (d.get("first_seen") or d.get("captured_at") or "")[:10],
+            "agent": label(d.get("agent"), AGENT_CN),
+            "channel": label(d.get("channel"), CHANNEL_CN),
             "source": SOURCE_CN.get(d.get("platform"), d.get("platform") or ""),
             "title": (d.get("title") or "").strip(),
             "author": (d.get("author") or "").strip(),
@@ -97,6 +111,8 @@ def load_extra():
             continue
         if isinstance(d.get("tags"), list):
             d["tags"] = ",".join(str(t) for t in d["tags"])
+        d["agent"] = label(d.get("agent"), AGENT_CN)
+        d["channel"] = label(d.get("channel"), CHANNEL_CN)
         rows.append(d)
     return rows
 
@@ -153,8 +169,8 @@ def dedupe(rows):
 STATUS_RANK = {"已抓取": 3, "提示词/要点": 3, "手工记录": 2, "部分抓取": 1,
                "需浏览器": 0, "待补链接": 0, "抓取失败": -1}
 FIELDS = ["date", "source", "title", "author", "url", "type", "stats",
-          "summary", "status", "tags", "package", "notes", "detail"]
-HDR = {"date": "日期", "source": "来源", "title": "标题", "author": "作者",
+          "summary", "status", "tags", "package", "notes", "detail", "agent", "channel"]
+HDR = {"agent": "来源Agent", "channel": "渠道", "date": "日期", "source": "来源", "title": "标题", "author": "作者",
        "url": "链接", "type": "类型", "stats": "热度(赞/藏/评)", "summary": "摘要/要点",
        "status": "状态", "tags": "标签", "package": "知识包", "notes": "备注", "detail": "详细记录"}
 
@@ -185,7 +201,7 @@ def write_xlsx(rows, path):
         ws.append([r.get(k, "") for k in FIELDS])
     widths = {"date": 12, "source": 8, "title": 56, "author": 16, "url": 42,
               "type": 12, "stats": 18, "summary": 60, "status": 12, "tags": 16,
-              "package": 30, "notes": 20, "detail": 42}
+              "package": 30, "notes": 20, "detail": 42, "agent": 12, "channel": 8}
     for i, k in enumerate(FIELDS, 1):
         ws.column_dimensions[chr(64 + i)].width = widths[k]
     ws.freeze_panes = "A2"
