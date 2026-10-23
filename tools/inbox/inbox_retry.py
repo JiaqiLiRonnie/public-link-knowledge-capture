@@ -72,7 +72,9 @@ def main():
         print(f"\n共 {len(items)} 条。加 --run 重抓（抖音请改用 douyin_tools.py）。")
         return
     env = dict(os.environ)
-    env.setdefault("https_proxy", "")  # 本机统一代理
+    proxy = (env.get("PUBLIC_LINK_PROXY") or env.get("https_proxy") or env.get("HTTPS_PROXY") or "").strip()
+    if proxy:
+        env["PUBLIC_LINK_PROXY"] = proxy
     for d in items:
         if d.get("platform") == "douyin":
             print("跳过抖音:", d.get("url"))
