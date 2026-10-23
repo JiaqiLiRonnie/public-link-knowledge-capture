@@ -75,6 +75,7 @@ select{cursor:pointer;padding-right:26px;background-image:url("data:image/svg+xm
 .chip.partial{background:var(--amber-soft);border-color:transparent;color:var(--amber-ink)}
 .chip.bad{background:var(--hot-soft);border-color:transparent;color:var(--hot)}
 .chip.tip{background:var(--accent-soft);border-color:transparent;color:var(--accent)}
+.chip.origin{background:transparent;border-color:var(--line);color:var(--ink-3)}
 .mark{border:1px solid transparent;background:none;color:var(--ink-4);font-size:12px;font-family:inherit;cursor:pointer;padding:3px 8px;border-radius:var(--radius-mark);transition:color 120ms,background-color 120ms}
 .mark:hover{color:var(--accent);background:var(--accent-softer)}
 .title{margin:6px 0 0;font-size:17px;font-weight:650;line-height:1.5;letter-spacing:-.005em}
@@ -114,14 +115,17 @@ select{cursor:pointer;padding-right:26px;background-image:url("data:image/svg+xm
     <select id="src"><option value="">全部来源</option></select>
     <select id="st"><option value="">全部状态</option></select>
     <select id="ty"><option value="">全部类型</option></select>
+    <select id="ag"><option value="">全部 Agent</option></select>
+    <select id="ch"><option value="">全部渠道</option></select>
     <label class="chk"><input type="checkbox" id="hideRead"> 隐藏已读</label>
+    <label class="chk"><input type="checkbox" id="hideTest" checked> 隐藏测试</label>
     <button class="btn" onclick="exportCSV()">导出 CSV</button>
   </div>
 </header>
 <main class="wrap list" id="list"></main>
 <script>
 const DATA = __DATA__;
-const FIELDS = ["date","source","title","author","url","type","stats","summary","status","tags","package","notes"];
+const FIELDS = ["date","source","title","author","url","type","stats","summary","status","tags","package","notes","detail","agent","channel"];
 const HDR = __HDR__;
 const read = JSON.parse(localStorage.getItem("inbox_read") || "{}");
 const K = r => r.url || r.title;
@@ -134,18 +138,23 @@ function chipClass(s){
   return "";
 }
 function uniq(k){return [...new Set(DATA.map(r=>r[k]).filter(Boolean))].sort()}
-function fill(sel,k){const s=document.getElementById(sel);uniq(k).forEach(v=>{const o=document.createElement("option");o.value=v;o.textContent=v;s.appendChild(o)})}
-fill("src","source");fill("st","status");fill("ty","type");
+function fill(sel,k,includeUnknown=false){const s=document.getElementById(sel);const values=uniq(k);if(includeUnknown&&DATA.some(r=>!r[k]))values.push("未知");values.forEach(v=>{const o=document.createElement("option");o.value=v;o.textContent=v;s.appendChild(o)})}
+fill("src","source");fill("st","status");fill("ty","type");fill("ag","agent",true);fill("ch","channel",true);
+function matchesOrigin(selected,value){return !selected||(selected==="未知"?!value:value===selected)}
 function render(){
   const q=document.getElementById("q").value.trim().toLowerCase();
   const src=document.getElementById("src").value, st=document.getElementById("st").value, ty=document.getElementById("ty").value;
   const hr=document.getElementById("hideRead").checked;
+  const agent=document.getElementById("ag").value, channel=document.getElementById("ch").value;
+  const hideTest=document.getElementById("hideTest").checked;
   let rows=DATA.filter(r=>{
+    if(!matchesOrigin(agent,r.agent)||!matchesOrigin(channel,r.channel))return false;
+    if(hideTest&&channel!=="测试"&&r.channel==="测试")return false;
     if(src&&r.source!==src)return false;
     if(st&&r.status!==st)return false;
     if(ty&&r.type!==ty)return false;
     if(hr&&read[K(r)])return false;
-    if(q){const s=(r.title+" "+r.author+" "+r.summary+" "+r.tags).toLowerCase();if(!s.includes(q))return false}
+    if(q){const s=[r.title,r.author,r.summary,r.tags,r.source,r.type,r.agent,r.channel].join(" ").toLowerCase();if(!s.includes(q))return false}
     return true;
   });
   rows.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
@@ -168,6 +177,8 @@ function render(){
         ${r.date?`<span class="mono">· ${esc(r.date)}</span>`:""}
         <span class="chip ${chipClass(r.status)}">${esc(r.status)}</span>
         ${r.type?`<span class="chip">${esc(r.type)}</span>`:""}
+        ${r.agent?`<span class="chip origin">via ${esc(r.agent)}</span>`:""}
+        ${r.channel?`<span class="chip origin">${esc(r.channel)}</span>`:""}
         <span class="spacer"></span>
         <button class="mark" onclick="toggle('${esc(K(r)).replace(/'/g,"")}')">${isRead?"↺ 未读":"✓ 已读"}</button>
       </header>
@@ -185,7 +196,7 @@ function render(){
 }
 function toggle(k){read[k]=!read[k];localStorage.setItem("inbox_read",JSON.stringify(read));render()}
 document.getElementById("q").oninput=render;
-["src","st","ty","hideRead"].forEach(id=>document.getElementById(id).onchange=render);
+["src","st","ty","ag","ch","hideRead","hideTest"].forEach(id=>document.getElementById(id).onchange=render);
 document.getElementById("theme").onclick=()=>{
   const cur=document.documentElement.getAttribute("data-theme")==="dark"?"light":"dark";
   document.documentElement.setAttribute("data-theme",cur);

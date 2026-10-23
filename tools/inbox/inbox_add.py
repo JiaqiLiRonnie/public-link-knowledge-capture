@@ -20,7 +20,8 @@ import tempfile
 INBOX = os.path.dirname(os.path.abspath(__file__))
 EXTRA = os.path.join(INBOX, "inbox_extra.jsonl")
 FIELDS = ["date", "source", "title", "author", "url", "type", "stats",
-          "summary", "status", "tags", "package", "notes", "detail"]
+          "summary", "status", "tags", "package", "notes", "detail", "agent", "channel"]
+STICKY = ("agent", "channel")  # Preserve provenance after the first non-empty value is recorded.
 SOURCES = {"抖音": "抖音", "douyin": "抖音", "公众号": "公众号", "wechat": "公众号", "weixin": "公众号",
            "网页": "网页", "web": "网页", "x": "X", "twitter": "X", "小红书": "小红书",
            "xiaohongshu": "小红书", "xhs": "小红书", "b站": "B站", "bilibili": "B站",
@@ -98,6 +99,10 @@ def main():
     ap.add_argument("--package", default="", help="知识包绝对路径")
     ap.add_argument("--notes", default="")
     ap.add_argument("--detail", default="", help="收件箱目录下的详细记录相对路径")
+    ap.add_argument("--agent", default=os.environ.get("PUBLIC_LINK_AGENT", ""),
+                    help="谁在入库：hermes/cc/codex/agy/grok/user（也可设环境变量 PUBLIC_LINK_AGENT）")
+    ap.add_argument("--channel", default=os.environ.get("PUBLIC_LINK_CHANNEL", ""),
+                    help="链接来自哪里：wechat/manual/test/cron（也可设 PUBLIC_LINK_CHANNEL）；agent 自己测试用的链接请标 test")
     ap.add_argument("--date", default=datetime.date.today().isoformat())
     ap.add_argument("--no-build", action="store_true", help="只写入，不重建看板")
     a = ap.parse_args()
@@ -123,12 +128,14 @@ def main():
     new = {"date": a.date, "source": source, "title": a.title.strip(), "author": a.author,
            "url": a.url.strip(), "type": a.type or "", "stats": a.stats, "summary": a.summary,
            "status": a.status or "", "tags": a.tags, "package": a.package, "notes": a.notes,
-           "detail": detail}
+           "detail": detail, "agent": a.agent.strip().lower(), "channel": a.channel.strip().lower()}
     rows, invalid_lines = load()
     k = key_of(new)
     for r in rows:
         if key_of(r) == k:
             for f in FIELDS:
+                if f in STICKY and r.get(f):
+                    continue
                 if new.get(f):
                     r[f] = new[f]
             action = "已更新"
