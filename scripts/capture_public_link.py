@@ -130,7 +130,7 @@ def curl_download(url: str, dest: Path, referer: str = "", timeout: int = 45) ->
     return (status, ctype)
 
 
-# Keep the default model configurable through PUBLIC_LINK_LEGACY_AI_MODEL; the fallback
+# Keep the default model configurable through PUBLIC_LINK_AI_MODEL; the fallback
 # is used only when the configured HSNB-compatible service rejects the primary.
 DEFAULT_MODEL = "deepseek-ai/deepseek-v4-flash"
 FALLBACK_MODEL = "glm-5.2"
@@ -165,17 +165,17 @@ def load_local_runtime_env() -> None:
     """
     config_path = Path(
         os.environ.get(
-            "PUBLIC_LINK_ENV",
+            "PUBLIC_LINK_ENV_FILE",
             str(Path.home() / ".public-link-knowledge" / "public-link.env"),
         )
     ).expanduser()
     if not config_path.is_file():
         return
     allowed = {
-        "PUBLIC_LINK_LEGACY_ASR_BASE_URL",
-        "PUBLIC_LINK_LEGACY_ASR_MODEL",
-        "PUBLIC_LINK_LEGACY_ASR_LANGUAGE",
-        "PUBLIC_LINK_LEGACY_ASR_TIMEOUT",
+        "PUBLIC_LINK_ASR_BASE_URL",
+        "PUBLIC_LINK_ASR_MODEL",
+        "PUBLIC_LINK_ASR_LANGUAGE",
+        "PUBLIC_LINK_ASR_TIMEOUT",
     }
     try:
         lines = config_path.read_text(encoding="utf-8").splitlines()
@@ -194,35 +194,17 @@ def load_local_runtime_env() -> None:
 load_local_runtime_env()
 DEFAULT_ASR_CONFIG = str(Path.home() / ".config" / "public-link" / "asr.env")
 ASR_SETTING_ALIASES: dict[str, tuple[str, ...]] = {
-    "BASE_URL": ("PUBLIC_LINK_LEGACY_ASR_BASE_URL", "PUBLIC_LINK_ASR_BASE_URL"),
-    "FALLBACK_BASE_URL": (
-        "PUBLIC_LINK_LEGACY_ASR_FALLBACK_BASE_URL",
-        "PUBLIC_LINK_ASR_FALLBACK_BASE_URL",
-    ),
-    "MODEL": ("PUBLIC_LINK_LEGACY_ASR_MODEL", "PUBLIC_LINK_ASR_MODEL"),
-    "FALLBACK_MODEL": (
-        "PUBLIC_LINK_LEGACY_ASR_FALLBACK_MODEL",
-        "PUBLIC_LINK_ASR_FALLBACK_MODEL",
-    ),
-    "API_KEY": ("PUBLIC_LINK_LEGACY_ASR_API_KEY", "PUBLIC_LINK_ASR_API_KEY"),
-    "FALLBACK_API_KEY": (
-        "PUBLIC_LINK_LEGACY_ASR_FALLBACK_API_KEY",
-        "PUBLIC_LINK_ASR_FALLBACK_API_KEY",
-    ),
-    "API_KEY_FILE": (
-        "PUBLIC_LINK_LEGACY_ASR_API_KEY_FILE",
-        "PUBLIC_LINK_ASR_API_KEY_FILE",
-    ),
-    "FALLBACK_API_KEY_FILE": (
-        "PUBLIC_LINK_LEGACY_ASR_FALLBACK_API_KEY_FILE",
-        "PUBLIC_LINK_ASR_FALLBACK_API_KEY_FILE",
-    ),
-    "LANGUAGE": ("PUBLIC_LINK_LEGACY_ASR_LANGUAGE", "PUBLIC_LINK_ASR_LANGUAGE"),
-    "TIMEOUT": ("PUBLIC_LINK_LEGACY_ASR_TIMEOUT", "PUBLIC_LINK_ASR_TIMEOUT"),
-    "FALLBACK_TIMEOUT": (
-        "PUBLIC_LINK_LEGACY_ASR_FALLBACK_TIMEOUT",
-        "PUBLIC_LINK_ASR_FALLBACK_TIMEOUT",
-    ),
+    "BASE_URL": ("PUBLIC_LINK_ASR_BASE_URL",),
+    "FALLBACK_BASE_URL": ("PUBLIC_LINK_ASR_FALLBACK_BASE_URL",),
+    "MODEL": ("PUBLIC_LINK_ASR_MODEL",),
+    "FALLBACK_MODEL": ("PUBLIC_LINK_ASR_FALLBACK_MODEL",),
+    "API_KEY": ("PUBLIC_LINK_ASR_API_KEY",),
+    "FALLBACK_API_KEY": ("PUBLIC_LINK_ASR_FALLBACK_API_KEY",),
+    "API_KEY_FILE": ("PUBLIC_LINK_ASR_API_KEY_FILE",),
+    "FALLBACK_API_KEY_FILE": ("PUBLIC_LINK_ASR_FALLBACK_API_KEY_FILE",),
+    "LANGUAGE": ("PUBLIC_LINK_ASR_LANGUAGE",),
+    "TIMEOUT": ("PUBLIC_LINK_ASR_TIMEOUT",),
+    "FALLBACK_TIMEOUT": ("PUBLIC_LINK_ASR_FALLBACK_TIMEOUT",),
 }
 
 
@@ -497,7 +479,7 @@ def browser_content_ready(html: str, platform: str) -> bool:
 
 def browser_executable() -> str:
     """Find a locally installed Chromium-compatible executable for the CLI fallback."""
-    configured = os.environ.get("PUBLIC_LINK_LEGACY_BROWSER_EXECUTABLE", "").strip()
+    configured = os.environ.get("PUBLIC_LINK_BROWSER_EXECUTABLE", "").strip()
     candidates = [
         configured,
         shutil.which("google-chrome"),
@@ -790,7 +772,7 @@ def capture_with_chrome_cdp(url: str, platform: str, fallback_resolved_url: str 
     if not executable:
         raise BrowserCaptureError("未找到 Chrome/Chromium headless 可执行文件")
 
-    command_timeout = max(10, int(os.environ.get("PUBLIC_LINK_LEGACY_BROWSER_CLI_TIMEOUT", BROWSER_CLI_TIMEOUT_S)))
+    command_timeout = max(10, int(os.environ.get("PUBLIC_LINK_BROWSER_CLI_TIMEOUT", BROWSER_CLI_TIMEOUT_S)))
     port = free_tcp_port()
     with tempfile.TemporaryDirectory(prefix="public-link-chrome-") as temp_root:
         profile_dir = Path(temp_root) / "profile"
@@ -895,8 +877,8 @@ def capture_with_chrome_dump_dom(url: str, platform: str, fallback_resolved_url:
     if not executable:
         raise BrowserCaptureError("未找到 Chrome/Chromium headless 可执行文件")
 
-    command_timeout = max(10, int(os.environ.get("PUBLIC_LINK_LEGACY_BROWSER_CLI_TIMEOUT", BROWSER_CLI_TIMEOUT_S)))
-    virtual_time = max(1000, int(os.environ.get("PUBLIC_LINK_LEGACY_BROWSER_VIRTUAL_TIME", BROWSER_CLI_VIRTUAL_TIME_MS)))
+    command_timeout = max(10, int(os.environ.get("PUBLIC_LINK_BROWSER_CLI_TIMEOUT", BROWSER_CLI_TIMEOUT_S)))
+    virtual_time = max(1000, int(os.environ.get("PUBLIC_LINK_BROWSER_VIRTUAL_TIME", BROWSER_CLI_VIRTUAL_TIME_MS)))
     with tempfile.TemporaryDirectory(prefix="public-link-chrome-") as temp_root:
         profile_dir = Path(temp_root) / "profile"
         command = [
@@ -1776,7 +1758,7 @@ def ai_completion(base_url: str, key: str, model: str, prompt: str, max_tokens: 
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
     )
     try:
-        timeout = max(10, int(os.environ.get("PUBLIC_LINK_LEGACY_AI_TIMEOUT", "45")))
+        timeout = max(10, int(os.environ.get("PUBLIC_LINK_AI_TIMEOUT", "45")))
         with urlopen(request, timeout=timeout) as response:
             result = json.loads(response.read().decode("utf-8"))
         # Deliberately read only final content, never reasoning_content.
@@ -1826,7 +1808,7 @@ def analyze(article: dict[str, Any]) -> tuple[dict[str, Any], str, int]:
         },
         ensure_ascii=False,
     )
-    primary = os.environ.get("PUBLIC_LINK_LEGACY_AI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+    primary = os.environ.get("PUBLIC_LINK_AI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
     models = list(dict.fromkeys([primary, FALLBACK_MODEL]))
     errors: list[str] = []
     for model in models:
@@ -2172,10 +2154,9 @@ def extract_audio_from_video(video_path: Path, audio_path: Path) -> None:
 
 def asr_config_path() -> Path:
     """Return the local ASR config path without reading or printing secrets."""
-    for name in ("PUBLIC_LINK_ASR_CONFIG", "PUBLIC_LINK_LEGACY_ASR_CONFIG"):
-        value = os.environ.get(name, "").strip()
-        if value:
-            return Path(value).expanduser()
+    value = os.environ.get("PUBLIC_LINK_ASR_CONFIG", "").strip()
+    if value:
+        return Path(value).expanduser()
     return Path(DEFAULT_ASR_CONFIG).expanduser()
 
 
@@ -2208,24 +2189,14 @@ def _read_asr_config() -> dict[str, str]:
 
 
 def _asr_setting(name: str, default: str = "") -> str:
-    """Resolve settings: new env, persistent config, legacy env, then legacy config."""
+    """Resolve a generic environment setting, then its optional config-file value."""
     aliases = ASR_SETTING_ALIASES[name]
-    generic_aliases = tuple(alias for alias in aliases if alias.startswith("PUBLIC_LINK_") and not alias.startswith("PUBLIC_LINK_LEGACY_"))
-    legacy_aliases = tuple(alias for alias in aliases if alias.startswith("PUBLIC_LINK_LEGACY_"))
-    for env_name in generic_aliases:
+    for env_name in aliases:
         value = os.environ.get(env_name)
         if value is not None and value.strip():
             return value.strip()
     config = _read_asr_config()
-    for env_name in generic_aliases:
-        value = config.get(env_name, "")
-        if value.strip():
-            return value.strip()
-    for env_name in legacy_aliases:
-        value = os.environ.get(env_name)
-        if value is not None and value.strip():
-            return value.strip()
-    for env_name in legacy_aliases:
+    for env_name in aliases:
         value = config.get(env_name, "")
         if value.strip():
             return value.strip()
@@ -2371,7 +2342,7 @@ def transcribe_audio_file(audio_path: Path) -> dict[str, Any]:
     targets = _asr_targets()
     if not targets:
         raise RuntimeError(
-            "未配置 ASR 服务；请设置 PUBLIC_LINK_LEGACY_ASR_BASE_URL / PUBLIC_LINK_ASR_BASE_URL "
+            "未配置 ASR 服务；请设置 PUBLIC_LINK_ASR_BASE_URL "
             f"或创建 {asr_config_path()} 后重试"
         )
     normalized_path, temp_root = prepare_asr_audio(audio_path)
