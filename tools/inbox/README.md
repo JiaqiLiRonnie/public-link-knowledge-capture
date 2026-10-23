@@ -41,10 +41,15 @@ python3 inbox_retry.py --run      # 逐条重试（抖音除外）
 # 3) 手动重建看板（inbox_add.py 已自动做，一般不需要）
 python3 build_inbox.py
 
-# 4) 起本地网页看板（可选）
+# 4) 定时或手动刷新；需要指定 Python 时设置 PYTHON
+PYTHON=python3 ./refresh_inbox.sh
+
+# 5) 起本地网页看板（可选）
 python3 -m http.server 8787 --bind 127.0.0.1 --directory ~/.public-link-knowledge/inbox
 # 打开 http://127.0.0.1:8787/inbox.html
 ```
+
+`inbox_retry.py --run` 使用 `PUBLIC_LINK_PROXY`，或沿用进程已有的 `https_proxy` / `HTTPS_PROXY`；不预设某个本机代理地址。
 
 ## 字段说明
 

@@ -3024,9 +3024,9 @@ def process(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Capture and understand public URLs")
     parser.add_argument("urls", nargs="+", help="one or more public http(s) URLs")
-    parser.add_argument("--root", default=os.environ.get("PUBLIC_LINK_KNOWLEDGE_DIR", DEFAULT_ROOT))
+    parser.add_argument("--root", default=DEFAULT_ROOT)
     parser.add_argument("--proxy", default=os.environ.get("PUBLIC_LINK_PROXY", ""),
-                        help="route HTTP + browser through this proxy, e.g. ")
+                        help="route HTTP + browser through this proxy, or set PUBLIC_LINK_PROXY")
     parser.add_argument("--no-analyze", action="store_true", help="only capture and save source content")
     parser.add_argument("--browser", action="store_true", help="force a Playwright render (JS-only pages)")
     parser.add_argument("--download-images", action="store_true", help="download at most 30 referenced images")
