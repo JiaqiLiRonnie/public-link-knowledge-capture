@@ -14,10 +14,15 @@ import csv
 import json
 import os
 import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from inbox_common import norm_url, write_lock  # noqa: E402
+from inbox_state import STATE_CN, fold, read_events  # noqa: E402
 
 INBOX = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(INBOX)
-# 知识库目录：环境变量优先；默认 ROOT/public-links（本机是指向 $PUBLIC_LINK_KNOWLEDGE_DIR 的软链）
+# 知识库目录：环境变量优先；默认 ROOT/public-links
 KNOWLEDGE = os.environ.get("PUBLIC_LINK_KNOWLEDGE_DIR") or os.path.join(ROOT, "public-links")
 INDEX = os.path.join(KNOWLEDGE, "index.jsonl")
 EXTRA = os.path.join(INBOX, "inbox_extra.jsonl")
@@ -28,7 +33,8 @@ SOURCE_CN = {"douyin": "抖音", "wechat": "公众号", "web": "网页", "x": "X
              "bilibili": "B站", "reddit": "Reddit", "youtube": "YouTube",
              "github": "GitHub", "hackernews": "HN", "wechat_video": "视频号", "asr": "ASR"}
 AGENT_CN = {"hermes": "Hermes", "cc": "Claude Code", "claude": "Claude Code", "claude-code": "Claude Code",
-            "codex": "Codex", "agy": "agy", "antigravity": "agy", "grok": "Grok", "user": "用户"}
+            "codex": "Codex", "agy": "agy", "antigravity": "agy", "grok": "Grok",
+            "grokbot": "Grok Bot", "grok-bot": "Grok Bot", "muse": "Muse", "user": "用户"}
 CHANNEL_CN = {"wechat": "微信", "weixin": "微信", "manual": "手动", "test": "测试", "cron": "定时"}
 
 
@@ -73,7 +79,7 @@ def load_index():
             print(f"警告: 知识库 index.jsonl 第{line_no}行不是 JSON 对象，已跳过")
             continue
         rows.append({
-            # Use first_seen so retries do not make an old link look newly captured.
+            # 日期取首次入库时间；重抓/重试只刷新 captured_at，不该让旧链接冒充"今天"
             "date": (d.get("first_seen") or d.get("captured_at") or "")[:10],
             "agent": label(d.get("agent"), AGENT_CN),
             "channel": label(d.get("channel"), CHANNEL_CN),
@@ -124,8 +130,15 @@ def load_pending():
         return rows
     txt = open(PENDING, encoding="utf-8").read()
     block = txt.split("## 未处理", 1)[1].split("## 已处理", 1)[0] if "## 未处理" in txt else ""
-    for m in re.finditer(r"\*\*(.+?)\*\*", block):
-        title = m.group(1).strip()
+    # 只认「- [ ] **标题**」形式的待办条目；账本里以 ">" 开头的每夜汇总笔记里的加粗片段不算条目
+    for line in block.splitlines():
+        line = line.strip()
+        if not re.match(r"-\s*\[[ x]\]", line):
+            continue
+        title = ""
+        m = re.search(r"\*\*(.+?)\*\*", line)
+        if m:
+            title = m.group(1).strip()
         if title:
             rows.append({
                 "date": "", "source": "抖音", "title": title, "author": "",
@@ -133,10 +146,6 @@ def load_pending():
                 "status": "待补链接", "tags": "待补链", "package": "", "notes": "", "detail": "",
             })
     return rows
-
-
-def norm_url(u):
-    return (u or "").strip().rstrip("/").split("?")[0]
 
 
 def dedupe(rows):
@@ -169,18 +178,29 @@ def dedupe(rows):
 STATUS_RANK = {"已抓取": 3, "提示词/要点": 3, "手工记录": 2, "部分抓取": 1,
                "需浏览器": 0, "待补链接": 0, "抓取失败": -1}
 FIELDS = ["date", "source", "title", "author", "url", "type", "stats",
-          "summary", "status", "tags", "package", "notes", "detail", "agent", "channel"]
-HDR = {"agent": "来源Agent", "channel": "渠道", "date": "日期", "source": "来源", "title": "标题", "author": "作者",
+          "summary", "status", "tags", "package", "notes", "detail", "agent", "channel",
+          "state", "due", "owner"]
+HDR = {"state": "进度", "due": "到期", "owner": "负责人", "agent": "来源Agent", "channel": "渠道","date": "日期", "source": "来源", "title": "标题", "author": "作者",
        "url": "链接", "type": "类型", "stats": "热度(赞/藏/评)", "summary": "摘要/要点",
        "status": "状态", "tags": "标签", "package": "知识包", "notes": "备注", "detail": "详细记录"}
 
 
+def atomic_write_text(path, text, encoding="utf-8"):
+    """先写临时文件再改名：两个 agent 同时重建看板时，不会出现一份文件被另一份的尾部污染。"""
+    tmp = "%s.%d.tmp" % (path, os.getpid())
+    with open(tmp, "w", encoding=encoding) as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
 def write_csv(rows, path):
-    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+    tmp = "%s.%d.tmp" % (path, os.getpid())
+    with open(tmp, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
         w.writerow([HDR[k] for k in FIELDS])
         for r in rows:
             w.writerow([r.get(k, "") for k in FIELDS])
+    os.replace(tmp, path)
 
 
 def write_xlsx(rows, path):
@@ -201,11 +221,14 @@ def write_xlsx(rows, path):
         ws.append([r.get(k, "") for k in FIELDS])
     widths = {"date": 12, "source": 8, "title": 56, "author": 16, "url": 42,
               "type": 12, "stats": 18, "summary": 60, "status": 12, "tags": 16,
-              "package": 30, "notes": 20, "detail": 42, "agent": 12, "channel": 8}
+              "package": 30, "notes": 20, "detail": 42, "agent": 12, "channel": 8,
+              "state": 10, "due": 12, "owner": 12}
     for i, k in enumerate(FIELDS, 1):
         ws.column_dimensions[chr(64 + i)].width = widths[k]
     ws.freeze_panes = "A2"
-    wb.save(path)
+    tmp = "%s.%d.tmp.xlsx" % (path, os.getpid())
+    wb.save(tmp)
+    os.replace(tmp, path)
     return True
 
 
@@ -213,21 +236,41 @@ def write_html(rows, path):
     """用模板渲染看板（模板见 inbox_template.html，AIHOT 风格）。"""
     tpl_path = os.path.join(INBOX, "inbox_template.html")
     tpl = open(tpl_path, encoding="utf-8").read()
-    data = json.dumps(rows, ensure_ascii=False)
-    hdr = json.dumps([HDR[k] for k in FIELDS], ensure_ascii=False)
-    html = tpl.replace("__DATA__", data).replace("__HDR__", hdr)
-    open(path, "w", encoding="utf-8").write(html)
+    # 数据嵌在 <script> 里：标题等来自抓取内容，必须转义 < > &，否则 "</script>" 能跳出脚本执行任意代码
+    def safe(obj):
+        return json.dumps(obj, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    html = tpl.replace("__DATA__", safe(rows)).replace("__HDR__", safe([HDR[k] for k in FIELDS]))
+    atomic_write_text(path, html)
+
+
+def attach_state(rows):
+    """把 inbox_state.jsonl 折叠出的进度（待分拣/处理中/等待中…）、到期日、负责人并入每一行。"""
+    folded = fold(read_events())
+    for r in rows:
+        key = norm_url(r.get("url")) or ("T:" + (r.get("title") or "")[:40])
+        rec = folded.get(key)
+        state = rec["state"] if rec else "inbox"
+        r["state"] = STATE_CN.get(state, state)
+        r["due"] = rec["due"] if rec else ""
+        r["owner"] = label(rec["owner"], AGENT_CN) if rec else ""
+    return rows
 
 
 def main():
     os.makedirs(INBOX, exist_ok=True)
-    rows = dedupe(load_extra() + load_index() + load_pending())
+    with write_lock(".build.lock"):
+        build()
+
+
+def build():
+    rows = attach_state(dedupe(load_extra() + load_index() + load_pending()))
     write_csv(rows, os.path.join(INBOX, "inbox.csv"))
     ok = write_xlsx(rows, os.path.join(INBOX, "inbox.xlsx"))
     write_html(rows, os.path.join(INBOX, "inbox.html"))
     by = {}
     for r in rows:
-        by[r["source"]] = by.get(r["source"], 0) + 1
+        name = r.get("source") or "网页"
+        by[name] = by.get(name, 0) + 1
     print(f"条目总数: {len(rows)}")
     print("按来源:", ", ".join(f"{k} {v}" for k, v in sorted(by.items(), key=lambda x: -x[1])))
     bad = [r for r in rows if r.get("status") in ("抓取失败", "需浏览器")]

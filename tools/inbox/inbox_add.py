@@ -4,9 +4,9 @@
 
 用法示例：
   python3 inbox_add.py --title "标题" --url "https://..." --source 公众号 \
-      --summary "2–5 句要点" --status 已抓取 --tags "科研,Skill"
+      --summary "2–5 句要点" --status 已抓取 --tags "科研,Skill" --agent codex --channel manual
 
-同一 URL（去掉查询串与结尾斜杠）已存在时合并更新而不是重复追加：
+同一规范化 URL 已存在时合并更新而不是重复追加（只去追踪参数，保留页面身份参数）：
 新值非空才覆盖旧值。无 URL 的条目按标题去重。写入是原子的（临时文件 + rename）。
 """
 import argparse
@@ -17,11 +17,16 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from inbox_common import norm_url, write_lock  # noqa: E402
+
 INBOX = os.path.dirname(os.path.abspath(__file__))
 EXTRA = os.path.join(INBOX, "inbox_extra.jsonl")
 FIELDS = ["date", "source", "title", "author", "url", "type", "stats",
           "summary", "status", "tags", "package", "notes", "detail", "agent", "channel"]
-STICKY = ("agent", "channel")  # Preserve provenance after the first non-empty value is recorded.
+STICKY = ("agent", "channel")  # 首次写入后不再被别的 agent 的更新覆盖
+AGENTS = ["hermes", "cc", "codex", "agy", "grok", "grokbot", "muse", "user"]
+AGENT_ALIASES = {"claude": "cc", "claude-code": "cc", "antigravity": "agy", "grok-bot": "grokbot"}
 SOURCES = {"抖音": "抖音", "douyin": "抖音", "公众号": "公众号", "wechat": "公众号", "weixin": "公众号",
            "网页": "网页", "web": "网页", "x": "X", "twitter": "X", "小红书": "小红书",
            "xiaohongshu": "小红书", "xhs": "小红书", "b站": "B站", "bilibili": "B站",
@@ -29,10 +34,6 @@ SOURCES = {"抖音": "抖音", "douyin": "抖音", "公众号": "公众号", "we
            "手工": "手工", "manual": "手工", "微信": "微信", "视频号": "视频号",
            "asr": "ASR", "通话": "ASR"}
 STATUSES = ["已抓取", "部分抓取", "抓取失败", "需浏览器", "待补链接", "提示词/要点", "手工记录"]
-
-
-def norm_url(u):
-    return (u or "").strip().rstrip("/").split("?")[0]
 
 
 def key_of(r):
@@ -100,12 +101,20 @@ def main():
     ap.add_argument("--notes", default="")
     ap.add_argument("--detail", default="", help="收件箱目录下的详细记录相对路径")
     ap.add_argument("--agent", default=os.environ.get("PUBLIC_LINK_AGENT", ""),
-                    help="谁在入库：hermes/cc/codex/agy/grok/user（也可设环境变量 PUBLIC_LINK_AGENT）")
+                    help="【必填】谁在入库：" + "/".join(AGENTS) + "（也可设环境变量 PUBLIC_LINK_AGENT）")
     ap.add_argument("--channel", default=os.environ.get("PUBLIC_LINK_CHANNEL", ""),
                     help="链接来自哪里：wechat/manual/test/cron（也可设 PUBLIC_LINK_CHANNEL）；agent 自己测试用的链接请标 test")
     ap.add_argument("--date", default=datetime.date.today().isoformat())
     ap.add_argument("--no-build", action="store_true", help="只写入，不重建看板")
     a = ap.parse_args()
+
+    # 来源必须可追溯：不写 --agent 就拒绝入库（2026-10-29 起），避免再出现"未知"来源
+    agent = AGENT_ALIASES.get(a.agent.strip().lower(), a.agent.strip().lower())
+    if agent not in AGENTS:
+        sys.exit("缺少或不认识 --agent（当前值: %r）。请写明你是谁，可选: %s\n"
+                 "例: python3 inbox_add.py --agent cc --channel wechat ...；"
+                 "自己测试用的链接加 --channel test。" % (a.agent, "/".join(AGENTS)))
+    a.agent = agent
 
     # 更新已有条目时，没显式传的字段不能被默认值覆盖；默认值只在新建时补
     source = SOURCES.get((a.source or "").strip().lower(), SOURCES.get((a.source or "").strip())) if a.source else ""
@@ -113,8 +122,9 @@ def main():
         sys.exit(f"来源 '{a.source}' 不认识，可选: {sorted(set(SOURCES.values()))}")
     if a.status and a.status not in STATUSES:
         sys.exit(f"状态 '{a.status}' 不合法，可选: {STATUSES}")
-    if a.url and not a.url.startswith(("http://", "https://")):
-        sys.exit("url 必须以 http(s):// 开头；没有链接请留空")
+    local_document = a.type == "文档" and a.url.startswith("file:///")
+    if a.url and not (a.url.startswith(("http://", "https://")) or local_document):
+        sys.exit("url 必须以 http(s):// 开头；本地文档允许绝对 file:/// URI；没有链接请留空")
     detail = a.detail.strip().replace("\\", "/")
     if detail:
         inbox_real = os.path.realpath(INBOX)
@@ -129,24 +139,25 @@ def main():
            "url": a.url.strip(), "type": a.type or "", "stats": a.stats, "summary": a.summary,
            "status": a.status or "", "tags": a.tags, "package": a.package, "notes": a.notes,
            "detail": detail, "agent": a.agent.strip().lower(), "channel": a.channel.strip().lower()}
-    rows, invalid_lines = load()
-    k = key_of(new)
-    for r in rows:
-        if key_of(r) == k:
-            for f in FIELDS:
-                if f in STICKY and r.get(f):
-                    continue
-                if new.get(f):
-                    r[f] = new[f]
-            action = "已更新"
-            break
-    else:
-        new["source"] = new["source"] or "网页"
-        new["type"] = new["type"] or "文章"
-        new["status"] = new["status"] or "已抓取"
-        rows.append(new)
-        action = "已追加"
-    save(rows, invalid_lines)
+    with write_lock():  # 读-改-写必须互斥，否则两个 agent 同时入库时后写的会吃掉先写的
+        rows, invalid_lines = load()
+        k = key_of(new)
+        for r in rows:
+            if key_of(r) == k:
+                for f in FIELDS:
+                    if f in STICKY and r.get(f):
+                        continue
+                    if new.get(f):
+                        r[f] = new[f]
+                action = "已更新"
+                break
+        else:
+            new["source"] = new["source"] or "网页"
+            new["type"] = new["type"] or "文章"
+            new["status"] = new["status"] or "已抓取"
+            rows.append(new)
+            action = "已追加"
+        save(rows, invalid_lines)
     snapshot_private_data()
     print(f"{action}: {new['title']}（共 {len(rows)} 条补录）")
     if not a.no_build:

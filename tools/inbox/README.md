@@ -16,6 +16,10 @@
 | `build_inbox.py` | 合并三个来源 → 生成 `inbox.csv` / `inbox.xlsx` / `inbox.html` |
 | `inbox_template.html` | 看板模板（暖白纸底 + teal 强调 + 卡片式，深浅色可切） |
 | `refresh_inbox.sh` | 一键刷新（给 cron 调用） |
+| `inbox_common.py` | 页面身份参数保留、追踪参数清理、跨进程写入锁 |
+| `inbox_state.py` | 进度事件流：分拣、处理、等待、完成、放弃；支持到期日与负责人 |
+| `inbox_digest.py` | 每日摘要，默认只打印，`--save` 才保存 |
+| `snapshot_private_data.py` | 为手工条目、进度事件和 ASR 记录生成本地私有快照 |
 
 ## 数据来源（三合一，按 URL 去重）
 
@@ -27,12 +31,16 @@
 
 ## 用法
 
+入库时 `--agent` **必填**（也可用 `PUBLIC_LINK_AGENT`）：`hermes/cc/codex/agy/grok/grokbot/muse/user`；支持 `claude/claude-code/antigravity/grok-bot` 别名。测试链接标 `--channel test`。
+
+写入与构建锁使用 `fcntl`，适用于 macOS/Linux。先设置 `PUBLIC_LINK_KNOWLEDGE_DIR` 为知识库目录，下面的命令在 `tools/inbox/` 中运行。
+
 ```bash
 # 1) 入库一条（推荐：自动校验 + 去重 + 重建看板）
 python3 inbox_add.py \
   --title "标题" --url "https://…" --source 公众号 \
   --author "作者" --type 文章 --status 已抓取 \
-  --summary "2-5 句要点" --tags "标签1,标签2"
+  --summary "2-5 句要点" --tags "标签1,标签2" --agent codex --channel manual
 
 # 2) 看有哪些失败了，需要重抓
 python3 inbox_retry.py            # 只列出
@@ -45,11 +53,25 @@ python3 build_inbox.py
 PYTHON=python3 ./refresh_inbox.sh
 
 # 5) 起本地网页看板（可选）
-python3 -m http.server 8787 --bind 127.0.0.1 --directory ~/.public-link-knowledge/inbox
+python3 -m http.server 8787 --bind 127.0.0.1 --directory .
 # 打开 http://127.0.0.1:8787/inbox.html
 ```
 
 `inbox_retry.py --run` 使用 `PUBLIC_LINK_PROXY`，或沿用进程已有的 `https_proxy` / `HTTPS_PROXY`；不预设某个本机代理地址。
+
+## 进度与摘要
+
+```bash
+python3 inbox_state.py set --url "https://example.org/item" --state in_progress --owner codex --agent codex
+python3 inbox_state.py set --url "https://example.org/item" --state waiting --due 2026-11-03 --agent codex
+python3 inbox_state.py set --url "https://example.org/item" --state dropped --reason "不再需要" --agent codex
+python3 inbox_state.py list --overdue
+python3 inbox_digest.py               # 只打印，不写入 hub
+python3 inbox_digest.py --save        # 写入 $HUB_DIR/digests/，默认 HUB_DIR 为 ~/.ronnie-os/hub
+```
+
+进度事件只追加到 `inbox_state.jsonl`。同一条目的当前进度由事件折叠得到；放弃必须给出原因。
+URL 去重保留微信的 `__biz/mid/idx/sn`、搜索页的 `q` 等页面身份参数。文档入库可用绝对 `file:///` URI 作内部去重键；看板来源链接仅允许 http(s)。
 
 ## 字段说明
 
@@ -60,6 +82,8 @@ python3 -m http.server 8787 --bind 127.0.0.1 --directory ~/.public-link-knowledg
 | `status` | **已抓取**（拿到正文）/ **部分抓取**（只有标题描述）/ **待补链接**（只有分享口令）/ **提示词-要点**（截图或 tips） |
 | `stats` | 热度，如 `赞11692 藏2738 转3015` |
 | `summary` | 2–5 句，要求：**不点开原文也知道是什么** |
+| `agent` / `channel` | 首次来源 agent / 来源渠道；重试不覆盖已有来源 |
+| `state` / `due` / `owner` | 跟进进度 / 到期日 / 负责人 |
 
 ## 自动化（可选）
 
@@ -74,3 +98,4 @@ python3 -m http.server 8787 --bind 127.0.0.1 --directory ~/.public-link-knowledg
 
 - `inbox_extra.jsonl` 含**个人分享历史**，**不要提交到公开仓库**（`.gitignore` 已排除）。
 - `inbox.csv/xlsx/html` 是产物，只由脚本生成，不要手改。
+- `inbox_state.jsonl`、ASR 记录和 `private_backups/` 同样含私有数据，不提交公开仓库。

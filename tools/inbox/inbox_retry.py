@@ -16,12 +16,12 @@ import sys
 INBOX = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(INBOX)
 KNOWLEDGE = os.environ.get("PUBLIC_LINK_KNOWLEDGE_DIR") or os.path.join(ROOT, "public-links")
-CAPTURE = os.environ.get("PUBLIC_LINK_CAPTURE_SCRIPT") or os.path.expanduser(
-    "~/.agents/skills/public-link-knowledge-capture/scripts/capture_public_link.py")
+CAPTURE = os.environ.get("PUBLIC_LINK_CAPTURE_SCRIPT") or os.path.normpath(
+    os.path.join(INBOX, "..", "..", "scripts", "capture_public_link.py"))
 
 
-def norm(u):
-    return (u or "").strip().rstrip("/").split("?")[0]
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from inbox_common import norm_url as norm  # noqa: E402
 
 
 def resolved_in_inbox():

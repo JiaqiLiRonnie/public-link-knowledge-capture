@@ -164,10 +164,12 @@ For each captured target, a standardized artifact bundle is preserved under `~/.
 
 ## 📄 Local Documents (optional companion)
 
+Inbox writes require `--agent` (or `PUBLIC_LINK_AGENT`); document ingestion forwards it to the inbox. Use `--channel test` for agent-generated test captures.
+
 `tools/ingest_doc.py` archives a document the user hands over directly (docx / pdf / pptx / xlsx / md): the original file is copied untouched into `document/<hash>-<slug>/original.<ext>`, its text is converted to `article.md` (pandoc, PyMuPDF/`pdftotext`, or openpyxl), a `meta.json` and `index.jsonl` row are written, and the entry is added to the share inbox when `tools/inbox/inbox_add.py` exists.
 
 ```bash
-python3 tools/ingest_doc.py ~/Downloads/report.docx --title "季度报告" --author someone
+python3 tools/ingest_doc.py ~/Downloads/report.docx --title "季度报告" --author someone --agent codex --channel manual
 ```
 
 ---

@@ -2,11 +2,11 @@
 """把用户发来的文档（docx/pdf/txt/md）转成 md 存档并入库。
 
 用法：
-  python3 ingest_doc.py <文件路径> [--title "标题"] [--author "作者"] [--source 文档]
-  python3 ingest_doc.py --url <链接> --file <已下载文件> [--title ...]
+  python3 ingest_doc.py <文件路径> --agent codex [--channel manual] [--title "标题"]
+  python3 ingest_doc.py <已下载文件> --url <链接> --agent codex [--title ...]
 
 产物：
-  ~/.public-link-knowledge/public-links/documents/<hash>-<slug>/
+  ~/.public-link-knowledge/public-links/document/<hash>-<slug>/
       original.<ext>   原件（不转码，原样保存）
       article.md       转换后的 markdown
       meta.json        元数据
@@ -20,7 +20,7 @@ ROOT = os.environ.get("PUBLIC_LINK_KNOWLEDGE_DIR") or os.path.expanduser(
     "~/.public-link-knowledge/public-links")
 PLATFORM = "document"
 INBOX_ADD = os.environ.get("PUBLIC_LINK_INBOX_ADD") or os.path.join(
-    os.path.dirname(ROOT), "inbox", "inbox_add.py")
+    os.path.dirname(os.path.abspath(__file__)), "inbox", "inbox_add.py")
 CST = timezone(timedelta(hours=8))
 
 DOC_EXTS = {".docx", ".doc", ".pdf", ".txt", ".md", ".rtf", ".odt", ".pptx", ".xlsx"}
@@ -97,7 +97,19 @@ def main():
     ap.add_argument("--source", default="手工")
     ap.add_argument("--url", default="", help="原始链接（如果文档来自某个网页）")
     ap.add_argument("--no-inbox", action="store_true", help="只存档，不入收件箱")
+    ap.add_argument("--agent", default=os.environ.get("PUBLIC_LINK_AGENT", ""),
+                    help="谁在入库（入收件箱必填）：hermes/cc/codex/agy/grok/grokbot/muse/user")
+    ap.add_argument("--channel", default=os.environ.get("PUBLIC_LINK_CHANNEL", ""),
+                    help="来源渠道：wechat/manual/test/cron")
     a = ap.parse_args()
+    if not a.no_inbox:
+        if not os.path.isfile(INBOX_ADD):
+            ap.error("inbox_add.py 不存在，请设置 PUBLIC_LINK_INBOX_ADD，或使用 --no-inbox")
+        sys.path.insert(0, os.path.dirname(os.path.abspath(INBOX_ADD)))
+        from inbox_add import AGENTS, AGENT_ALIASES
+        a.agent = AGENT_ALIASES.get(a.agent.strip().lower(), a.agent.strip().lower())
+        if a.agent not in AGENTS:
+            ap.error("入收件箱必须指定有效 --agent（或 PUBLIC_LINK_AGENT）：" + "/".join(AGENTS))
 
     src = os.path.expanduser(a.file)
     if not os.path.isfile(src):
@@ -149,12 +161,19 @@ def main():
                "--title", title, "--source", a.source[:20],
                "--type", "文档", "--status", "已抓取",
                "--summary", excerpt]
-        if a.url:
-            cmd += ["--url", a.url]
+        if a.agent:
+            cmd += ["--agent", a.agent]
+        if a.channel:
+            cmd += ["--channel", a.channel]
+        # 始终带 url：无外部链接时用 file:// 原件路径，和 index.jsonl 里的记录同键，
+        # 否则看板会出现「index 一行 + extra 一行」的重复条目。
+        cmd += ["--url", a.url or f"file://{original}"]
         if a.author:
             cmd += ["--author", a.author]
         r = subprocess.run(cmd, capture_output=True, text=True)
         print("📥 入库:", (r.stdout or r.stderr).strip()[:200])
+        if r.returncode:
+            sys.exit(r.returncode)
 
 
 if __name__ == "__main__":

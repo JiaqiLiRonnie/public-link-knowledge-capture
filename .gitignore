@@ -11,3 +11,16 @@ public-links/
 /inbox/
 !tools/inbox/
 pending-reviews.md
+
+# Optional inbox module: private records and generated output stay local.
+/tools/inbox/*.jsonl
+/tools/inbox/inbox.csv
+/tools/inbox/inbox.xlsx
+/tools/inbox/inbox.html
+/tools/inbox/private_backups/
+/tools/inbox/asr/records/
+/tools/inbox/.*.lock
+/tools/inbox/.extra-*.tmp
+/tools/inbox/*.tmp
+/tools/inbox/*.tmp.xlsx
+/tools/public-links/

@@ -3,212 +3,635 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='85'%3E%F0%9F%93%A5%3C/text%3E%3C/svg%3E">
 <title>分享收件箱</title>
 <style>
 :root{
-  --bg:#faf9f6;--bg-sunk:#f3f3ef;--surface:#fff;--surface-2:#fdfdfb;
-  --ink:#202a30;--ink-2:#303c42;--ink-3:#59656b;--ink-4:#657176;
-  --line:#dfe4e1;--line-strong:#d1d9d5;--line-soft:#e9ede9;
-  --accent:#176b75;--accent-soft:rgba(23,107,117,.08);--accent-softer:rgba(23,107,117,.05);
-  --hot:#b3402a;--hot-soft:rgba(179,64,42,.08);
-  --amber:#b8873a;--amber-ink:#7c5a24;--amber-soft:rgba(184,135,58,.12);
-  --ok:#2f7d5c;--ok-soft:rgba(47,125,92,.1);--ok-ink:#2a6e51;
-  --shadow-card:0 1px 2px rgba(32,42,48,.025);
-  --shadow-hover:0 3px 12px rgba(32,42,48,.055);
-  --radius-mark:5px;--radius-control:8px;--radius-tile:10px;--radius-card:12px;
-  --ease:cubic-bezier(0.25,1,0.5,1);
+  --bg:#f6f7f5;--surface:#fff;--surface-soft:#fbfcfa;--surface-hover:#f4f7f5;
+  --ink:#202a30;--ink-2:#3e4b50;--ink-3:#667278;--ink-4:#899397;
+  --line:#e1e7e3;--line-strong:#ccd7d1;--line-soft:#edf0ed;
+  --accent:#176b75;--accent-soft:rgba(23,107,117,.09);--accent-softer:rgba(23,107,117,.05);
+  --hot:#b3402a;--hot-soft:rgba(179,64,42,.09);
+  --amber:#a87522;--amber-soft:rgba(184,135,58,.13);
+  --ok:#2f7d5c;--ok-soft:rgba(47,125,92,.1);
+  --shadow:0 1px 3px rgba(32,42,48,.035);
+  --radius-sm:7px;--radius:10px;--radius-lg:13px;
   --font-sans:system-ui,-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","HarmonyOS Sans SC","Microsoft YaHei",sans-serif;
   --font-mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
 }
 [data-theme="dark"]{
-  --bg:#13191c;--bg-sunk:#182024;--surface:#1a2226;--surface-2:#1d272b;
-  --ink:#e7eceb;--ink-2:#d2dada;--ink-3:#a5b0b3;--ink-4:#89979d;
-  --line:rgba(255,255,255,.08);--line-strong:rgba(255,255,255,.12);--line-soft:rgba(255,255,255,.06);
-  --accent:#12ccd8;--accent-soft:rgba(18,204,216,.12);--accent-softer:rgba(18,204,216,.06);
-  --hot:#d86a52;--hot-soft:rgba(216,106,82,.12);
-  --amber:#d3b26a;--amber-ink:#d3b26a;--amber-soft:rgba(211,178,106,.12);
-  --ok:#5fc79a;--ok-soft:rgba(95,199,154,.12);--ok-ink:#7fd1ad;
-  --shadow-card:none;--shadow-hover:none;
+  --bg:#13191c;--surface:#1a2226;--surface-soft:#182024;--surface-hover:#202b30;
+  --ink:#e7eceb;--ink-2:#cbd4d4;--ink-3:#a2afb2;--ink-4:#839196;
+  --line:rgba(255,255,255,.085);--line-strong:rgba(255,255,255,.14);--line-soft:rgba(255,255,255,.06);
+  --accent:#19bfca;--accent-soft:rgba(25,191,202,.12);--accent-softer:rgba(25,191,202,.07);
+  --hot:#e07a61;--hot-soft:rgba(224,122,97,.12);
+  --amber:#d3af66;--amber-soft:rgba(211,175,102,.13);
+  --ok:#65c79b;--ok-soft:rgba(101,199,155,.12);
+  --shadow:none;
 }
 *{box-sizing:border-box}
 html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans);font-size:14px;line-height:1.5}
 ::selection{background:var(--accent-soft)}
 a{color:inherit;text-decoration:none}
+button,input,select{font:inherit}
+button{color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
-.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
-.top{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-.bar{display:flex;align-items:center;gap:12px;padding-top:16px;padding-bottom:12px}
-.brand{display:flex;align-items:center;gap:10px}
-.logo{font-size:22px}
-h1{margin:0;font-size:19px;font-weight:650;letter-spacing:-.01em}
-h1 small{display:block;color:var(--ink-4);font-weight:400;font-size:12.5px;margin-top:2px}
-.bar .spacer{flex:1}
-.icon-btn{border:1px solid var(--line);background:var(--surface);color:var(--ink-3);width:34px;height:34px;border-radius:var(--radius-control);font-size:15px;cursor:pointer;transition:color 120ms,border-color 120ms}
-.icon-btn:hover{color:var(--ink);border-color:var(--line-strong)}
-.stats{display:flex;flex-wrap:wrap;gap:8px;padding-bottom:12px}
-.stat{display:inline-flex;align-items:baseline;gap:5px;padding:5px 11px;border-radius:999px;background:var(--bg-sunk);border:1px solid var(--line-soft);font-size:12.5px;color:var(--ink-3)}
-.stat b{color:var(--ink);font-size:15px;font-variant-numeric:tabular-nums}
-.stat.key b{color:var(--accent)}
-.stat.hot b{color:var(--hot)}
-.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-bottom:14px}
-input[type=search],select{appearance:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);height:34px;padding:0 12px;border-radius:var(--radius-control);font-size:13px;font-family:inherit}
-input[type=search]{flex:1;min-width:200px}
-select{cursor:pointer;padding-right:26px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238a929c'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
-.chk{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-3);cursor:pointer;height:34px;padding:0 4px}
-.btn{height:34px;padding:0 14px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);border-radius:var(--radius-control);font-size:13px;font-family:inherit;cursor:pointer;transition:color 120ms,border-color 120ms}
-.btn:hover{color:var(--ink);border-color:var(--line-strong)}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-contrast,#fff)}
-.list{display:flex;flex-direction:column;gap:10px;padding-top:8px;padding-bottom:64px}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-card);box-shadow:var(--shadow-card);padding:14px 18px 15px;transition:box-shadow 200ms var(--ease),border-color 200ms,transform 200ms var(--ease);animation:fadeup 280ms var(--ease) both}
-.card:hover{box-shadow:var(--shadow-hover);border-color:var(--line-strong);transform:translateY(-1px)}
-@keyframes fadeup{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-.card.read{opacity:.55}
-.card.read .title{text-decoration:line-through;text-decoration-color:var(--ink-4)}
-.meta{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-4);min-height:20px;flex-wrap:wrap}
-.meta .src{color:var(--ink-3);font-weight:600}
-.meta .mono{font-family:var(--font-mono);font-size:12px}
-.meta .spacer{flex:1}
-.chip{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;font-size:11.5px;background:var(--bg-sunk);border:1px solid var(--line-soft);color:var(--ink-4)}
-.chip.ok{background:var(--ok-soft);border-color:transparent;color:var(--ok-ink)}
-.chip.partial{background:var(--amber-soft);border-color:transparent;color:var(--amber-ink)}
-.chip.bad{background:var(--hot-soft);border-color:transparent;color:var(--hot)}
-.chip.tip{background:var(--accent-soft);border-color:transparent;color:var(--accent)}
-.chip.origin{background:transparent;border-color:var(--line);color:var(--ink-3)}
-.mark{border:1px solid transparent;background:none;color:var(--ink-4);font-size:12px;font-family:inherit;cursor:pointer;padding:3px 8px;border-radius:var(--radius-mark);transition:color 120ms,background-color 120ms}
-.mark:hover{color:var(--accent);background:var(--accent-softer)}
-.title{margin:6px 0 0;font-size:17px;font-weight:650;line-height:1.5;letter-spacing:-.005em}
-.title:hover{color:var(--accent)}
-.summary{margin:6px 0 0;font-size:14.5px;line-height:1.75;color:var(--ink-3);display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.app-shell{min-height:100vh;display:grid;grid-template-columns:224px minmax(0,1fr)}
+.sidebar{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;padding:22px 13px 16px;background:var(--surface);border-right:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:11px;padding:2px 9px 25px}
+.brand-mark{width:38px;height:38px;display:grid;place-items:center;flex:none;border-radius:12px;background:var(--accent-soft);font-size:20px}
+.brand-name{font-size:15px;font-weight:720;letter-spacing:-.02em}
+.brand-sub{margin-top:2px;color:var(--ink-4);font-size:11.5px}
+.nav-section-title{margin:0 9px 8px;color:var(--ink-4);font-size:11px;font-weight:650;letter-spacing:.06em}
+.primary-nav,.source-nav{display:flex;flex-direction:column;gap:3px}
+.nav-item{min-height:38px;width:100%;display:flex;align-items:center;gap:10px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--ink-3);text-align:left;cursor:pointer;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--surface-hover);color:var(--ink)}
+.nav-item.active{background:var(--accent-soft);color:var(--accent);font-weight:650}
+.nav-icon{width:18px;flex:none;text-align:center;font-size:15px;opacity:.88}
+.nav-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nav-count{min-width:22px;padding:1px 6px;border-radius:999px;background:var(--surface-soft);color:var(--ink-4);text-align:center;font-size:11px;font-variant-numeric:tabular-nums}
+.nav-item.active .nav-count{background:var(--surface);color:var(--accent)}
+.sidebar-divider{height:1px;margin:18px 8px 16px;background:var(--line-soft)}
+.source-nav{max-height:calc(100vh - 430px);overflow:auto;padding-right:3px}
+.source-nav .nav-item{min-height:34px;font-size:12.5px}
+.source-nav .nav-icon{font-size:12px}
+.sidebar-bottom{margin-top:auto;padding:16px 8px 0}
+.theme-toggle{width:100%;height:36px;display:flex;align-items:center;gap:9px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink-3);text-align:left;cursor:pointer}
+.theme-toggle:hover{border-color:var(--line-strong);color:var(--ink)}
+.theme-glyph{font-size:15px}
+.local-note{margin:10px 2px 0;color:var(--ink-4);font-size:10.5px;line-height:1.55}
+.main{min-width:0}
+.page{max-width:1280px;margin:0 auto;padding:30px 36px 72px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:24px}
+.eyebrow{margin-bottom:5px;color:var(--accent);font-size:11px;font-weight:700;letter-spacing:.08em}
+h1{margin:0;font-size:25px;font-weight:700;letter-spacing:-.025em;line-height:1.2}
+.subtitle{margin:7px 0 0;color:var(--ink-4);font-size:13px}
+.top-actions{display:flex;align-items:center;gap:9px}
+.search-box{width:min(340px,36vw);height:39px;display:flex;align-items:center;gap:9px;padding:0 10px 0 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink-4);transition:border-color .15s,box-shadow .15s}
+.search-box:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.search-icon{font-size:18px;line-height:1}
+.search-box input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:var(--ink);font-size:13px}
+.search-box input::placeholder{color:var(--ink-4)}
+.search-clear{width:22px;height:22px;border:0;border-radius:5px;background:transparent;color:var(--ink-4);cursor:pointer}
+.search-clear:hover{background:var(--surface-hover);color:var(--ink)}
+kbd{min-width:19px;padding:1px 5px;border:1px solid var(--line);border-radius:5px;background:var(--surface-soft);color:var(--ink-4);text-align:center;font-family:var(--font-mono);font-size:10px}
+.btn{height:38px;display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:0 13px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink-2);font-size:12.5px;font-weight:600;white-space:nowrap;cursor:pointer;transition:border-color .15s,background .15s,color .15s}
+.btn:hover{border-color:var(--line-strong);background:var(--surface-hover);color:var(--ink)}
+.btn-primary{border-color:var(--accent);background:var(--accent);color:#fff}
+.btn-primary:hover{border-color:var(--accent);background:var(--accent);color:#fff;filter:brightness(1.06)}
+.overview{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:24px}
+.stat-card{min-width:0;display:flex;align-items:center;gap:12px;padding:13px 15px;border:1px solid var(--line);border-radius:11px;background:var(--surface);text-align:left;cursor:pointer;transition:border-color .15s,transform .15s,box-shadow .15s}
+.stat-card:hover{transform:translateY(-1px);border-color:var(--line-strong);box-shadow:var(--shadow)}
+.stat-card.active{border-color:rgba(23,107,117,.35);background:var(--accent-softer)}
+.stat-icon{width:34px;height:34px;display:grid;place-items:center;flex:none;border-radius:10px;background:var(--surface-soft);color:var(--accent);font-size:16px}
+.stat-card.warning .stat-icon{background:var(--amber-soft);color:var(--amber)}
+.stat-card .stat-copy{min-width:0;flex:1}
+.stat-label{color:var(--ink-4);font-size:11.5px}
+.stat-value{margin-top:1px;color:var(--ink);font-size:21px;font-weight:720;line-height:1.25;font-variant-numeric:tabular-nums}
+.stat-side{color:var(--ink-4);font-size:11px;white-space:nowrap}
+.toolbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-top:28px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.section-heading{display:flex;align-items:baseline;gap:9px;min-width:0}
+.section-heading h2{margin:0;font-size:17px;font-weight:680;letter-spacing:-.01em}
+.results-count{color:var(--ink-4);font-size:12px;white-space:nowrap}
+.filters{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+select{height:34px;appearance:none;padding:0 29px 0 11px;border:1px solid var(--line);border-radius:8px;background-color:var(--surface);background-image:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238a929c'/%3E%3C/svg%3E\");background-repeat:no-repeat;background-position:right 10px center;color:var(--ink-3);font-size:12px;cursor:pointer}
+select:hover{border-color:var(--line-strong);color:var(--ink)}
+.check-filter{height:34px;display:inline-flex;align-items:center;gap:7px;padding:0 5px;color:var(--ink-3);font-size:12px;white-space:nowrap;cursor:pointer}
+.check-filter input{accent-color:var(--accent)}
+.clear-filters{height:32px;padding:0 9px;border:0;background:transparent;color:var(--accent);font-size:12px;cursor:pointer}
+.clear-filters:hover{text-decoration:underline;text-underline-offset:3px}
+.stream{padding-top:7px}
+.day-group{margin-top:18px}
+.day-heading{display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:0 2px}
+.day-heading h3{margin:0;font-size:14px;font-weight:690}
+.day-count{color:var(--ink-4);font-size:11.5px}
+.day-rule{height:1px;flex:1;background:var(--line-soft)}
+.card-list{display:flex;flex-direction:column;gap:9px}
+.card{position:relative;padding:14px 17px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:var(--shadow);transition:border-color .15s,box-shadow .15s,transform .15s}
+.card:hover{transform:translateY(-1px);border-color:var(--line-strong);box-shadow:0 5px 18px rgba(32,42,48,.055)}
+[data-theme=\"dark\"] .card:hover{box-shadow:none}
+.card.read{background:var(--surface-soft)}
+.card-meta{display:flex;align-items:center;gap:7px;min-height:21px;flex-wrap:wrap;color:var(--ink-4);font-size:11.5px}
+.source-label{color:var(--ink-2);font-weight:680}
+.meta-dot{color:var(--line-strong)}
+.date-label{font-variant-numeric:tabular-nums}
+.badge{min-height:20px;display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;background:var(--surface-soft);color:var(--ink-3);font-size:10.5px;white-space:nowrap}
+.badge.status-good{background:var(--ok-soft);color:var(--ok)}
+.badge.status-warn{background:var(--amber-soft);color:var(--amber)}
+.badge.status-bad{background:var(--hot-soft);color:var(--hot)}
+.badge.status-note{background:var(--accent-soft);color:var(--accent)}
+.badge.origin-badge{background:transparent;border:1px solid var(--line);color:var(--ink-3)}
+.card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-top:4px}
+.card-title{min-width:0;flex:1;margin:0;font-size:16px;font-weight:680;line-height:1.5;letter-spacing:-.012em;overflow-wrap:anywhere}
+.card.read .card-title{color:var(--ink-2)}
+.mark{height:28px;display:inline-flex;align-items:center;gap:5px;flex:none;padding:0 8px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--ink-4);font-size:11.5px;white-space:nowrap;cursor:pointer}
+.mark:hover{border-color:var(--line);background:var(--surface-soft);color:var(--accent)}
+.mark.is-read{color:var(--ok)}
+.summary{margin:6px 0 0;color:var(--ink-3);font-size:13.5px;line-height:1.7;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .card.open .summary{-webkit-line-clamp:unset}
-.more{margin-top:4px;background:none;border:0;color:var(--accent);font-size:12.5px;font-family:inherit;cursor:pointer;padding:2px 0}
-.tags{margin-top:9px;display:flex;flex-wrap:wrap;gap:6px 10px;font-size:12px;color:var(--ink-4)}
-.tag{color:var(--ink-4)}
-.tag::before{content:"#";opacity:.6;margin-right:1px}
-.foot{margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:9px;border-top:1px solid var(--line-soft)}
-.link{font-family:var(--font-mono);font-size:12px;color:var(--accent);word-break:break-all}
-.link:hover{text-decoration:underline;text-underline-offset:3px}
-.nolink{font-size:12px;color:var(--hot)}
-.hot{font-variant-numeric:tabular-nums;color:var(--ink-3);font-size:12.5px}
-.empty{text-align:center;color:var(--ink-4);padding:60px 0;font-size:14px}
-@media (max-width:640px){
-  .wrap{padding:0 14px}
-  .title{font-size:16px}
-  .summary{font-size:14px}
-  .bar{padding-top:12px}
+.more{margin-top:3px;padding:2px 0;border:0;background:transparent;color:var(--accent);font-size:11.5px;cursor:pointer}
+.more:hover{text-decoration:underline;text-underline-offset:3px}
+.tags{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:8px}
+.tag{padding:2px 7px;border:1px solid var(--line-soft);border-radius:5px;color:var(--ink-4);font-size:10.5px}
+.card-foot{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:10px;padding-top:8px;border-top:1px solid var(--line-soft)}
+.foot-links,.foot-meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0}
+.card-link{display:inline-flex;align-items:center;gap:4px;color:var(--accent);font-size:11.5px;font-weight:600}
+.card-link:hover{text-decoration:underline;text-underline-offset:3px}
+.card-link.secondary{color:var(--ink-3);font-weight:500}
+.foot-meta{justify-content:flex-end;color:var(--ink-4);font-size:11px}
+.foot-meta span{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.empty{padding:62px 20px;text-align:center;color:var(--ink-4)}
+.empty-mark{font-size:27px}
+.empty-title{margin-top:10px;color:var(--ink-2);font-size:15px;font-weight:650}
+.empty-hint{margin-top:4px;font-size:12.5px}
+.toast{position:fixed;right:24px;bottom:24px;z-index:20;padding:10px 14px;border:1px solid var(--line);border-radius:9px;background:var(--surface);box-shadow:0 8px 25px rgba(0,0,0,.12);color:var(--ink-2);font-size:12px;opacity:0;transform:translateY(6px);pointer-events:none;transition:opacity .18s,transform .18s}
+.toast.show{opacity:1;transform:translateY(0)}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
+@media (max-width:1080px){
+  .app-shell{grid-template-columns:205px minmax(0,1fr)}
+  .page{padding-right:24px;padding-left:24px}
+  .overview{gap:8px}
+  .stat-card{padding:11px}
+  .stat-side{display:none}
+}
+@media (max-width:820px){
+  .app-shell{display:block}
+  .sidebar{position:relative;width:100%;height:auto;padding:12px 16px 10px;border-right:0;border-bottom:1px solid var(--line)}
+  .brand{padding:0 3px 10px}
+  .brand-mark{width:32px;height:32px;border-radius:9px;font-size:17px}
+  .brand-sub{display:none}
+  .nav-section-title,.sidebar-divider,.source-nav,.sidebar-bottom{display:none}
+  .primary-nav{flex-direction:row;overflow-x:auto;padding:1px 0 3px}
+  .primary-nav .nav-item{width:auto;min-width:max-content;min-height:34px;gap:6px;padding:0 10px;font-size:12px}
+  .primary-nav .nav-icon{width:auto}
+  .main{width:100%}
+  .page{padding:23px 22px 60px}
+}
+@media (max-width:620px){
+  .page{padding:18px 14px 48px}
+  .topbar{align-items:flex-start;flex-direction:column;gap:14px}
+  h1{font-size:22px}
+  .top-actions{width:100%}
+  .search-box{width:auto;flex:1}
+  .overview{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:18px}
+  .stat-card{gap:9px;padding:10px}
+  .stat-icon{width:30px;height:30px}
+  .toolbar{align-items:flex-start;flex-direction:column;gap:11px;margin-top:21px}
+  .filters{width:100%;justify-content:flex-start}
+  select{flex:1;min-width:112px}
+  .check-filter{margin-left:auto}
+  .clear-filters{padding-right:2px;padding-left:2px}
+  .card{padding:12px 13px 10px}
+  .card-title{font-size:15px}
+  .summary{font-size:13px}
+  .card-foot{align-items:flex-start;flex-direction:column;gap:7px}
+  .foot-meta{justify-content:flex-start}
+  .day-group{margin-top:15px}
+}
+@media (max-width:390px){
+  .primary-nav .nav-count{display:none}
+  .overview{gap:7px}
+  .stat-value{font-size:19px}
+  .stat-label{font-size:10.5px}
+  .search-clear{display:none}
 }
 </style>
 </head>
 <body>
-<header class="top">
-  <div class="wrap bar">
-    <div class="brand"><span class="logo">📥</span>
-      <h1>分享收件箱<small>随手转发 → 自动汇总 · 一眼扫完不遗漏</small></h1>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">📥</div>
+      <div><div class="brand-name">分享收件箱</div><div class="brand-sub">所有资料，一处回看</div></div>
     </div>
-    <span class="spacer"></span>
-    <button class="icon-btn" id="theme" title="切换深浅色">◐</button>
-  </div>
-  <div class="wrap stats" id="stats"></div>
-  <div class="wrap controls">
-    <input type="search" id="q" placeholder="搜索标题 / 作者 / 摘要 / 标签…">
-    <select id="src"><option value="">全部来源</option></select>
-    <select id="st"><option value="">全部状态</option></select>
-    <select id="ty"><option value="">全部类型</option></select>
-    <select id="ag"><option value="">全部 Agent</option></select>
-    <select id="ch"><option value="">全部渠道</option></select>
-    <label class="chk"><input type="checkbox" id="hideRead"> 隐藏已读</label>
-    <label class="chk"><input type="checkbox" id="hideTest" checked> 隐藏测试</label>
-    <button class="btn" onclick="exportCSV()">导出 CSV</button>
-  </div>
-</header>
-<main class="wrap list" id="list"></main>
+    <div class="nav-section-title">快速视图</div>
+    <nav class="primary-nav" id="primaryNav" aria-label="快速视图">
+      <button class="nav-item active" data-view="all" type="button"><span class="nav-icon" aria-hidden="true">▤</span><span class="nav-label">全部条目</span><span class="nav-count" id="countAll">0</span></button>
+      <button class="nav-item" data-view="unread" type="button"><span class="nav-icon" aria-hidden="true">●</span><span class="nav-label">未读</span><span class="nav-count" id="countUnread">0</span></button>
+      <button class="nav-item" data-view="attention" type="button"><span class="nav-icon" aria-hidden="true">⚑</span><span class="nav-label">待处理</span><span class="nav-count" id="countAttention">0</span></button>
+      <button class="nav-item" data-view="follow" type="button"><span class="nav-icon" aria-hidden="true">⏱</span><span class="nav-label">跟进中</span><span class="nav-count" id="countFollow">0</span></button>
+      <button class="nav-item" data-view="asr" type="button"><span class="nav-icon" aria-hidden="true">◷</span><span class="nav-label">通话 ASR</span><span class="nav-count" id="countAsr">0</span></button>
+    </nav>
+    <div class="sidebar-divider"></div>
+    <div class="nav-section-title">按来源浏览</div>
+    <nav class="source-nav" id="sourceNav" aria-label="按来源浏览"></nav>
+    <div class="sidebar-bottom">
+      <button class="theme-toggle" id="theme" type="button" aria-label="切换深浅色"><span class="theme-glyph" aria-hidden="true">◐</span><span>切换深浅色</span></button>
+      <div class="local-note">本地收件箱 · 阅读标记保存在此浏览器</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="page">
+      <header class="topbar">
+        <div class="page-heading">
+          <div class="eyebrow">个人资料库</div>
+          <h1 id="pageTitle">全部条目</h1>
+          <p class="subtitle">新内容集中在这里，按来源筛选，读完随手标记。</p>
+        </div>
+        <div class="top-actions">
+          <label class="search-box" aria-label="搜索收件箱">
+            <span class="search-icon" aria-hidden="true">⌕</span>
+            <input type="search" id="q" placeholder="搜索标题、作者、摘要或标签…" autocomplete="off">
+            <button class="search-clear" id="clearSearch" type="button" aria-label="清空搜索" hidden>×</button>
+            <kbd>/</kbd>
+          </label>
+          <button class="btn btn-primary" id="export" type="button"><span aria-hidden="true">↓</span>导出 CSV</button>
+        </div>
+      </header>
+
+      <section class="overview" id="stats" aria-label="收件箱概览"></section>
+
+      <section class="toolbar" aria-label="内容筛选">
+        <div class="section-heading"><h2>内容流</h2><span class="results-count" id="resultsCount"></span></div>
+        <div class="filters">
+          <select id="st" aria-label="按状态筛选"><option value="">全部抓取状态</option></select>
+          <select id="pg" aria-label="按进度筛选"><option value="">全部进度</option></select>
+          <select id="ty" aria-label="按类型筛选"><option value="">全部类型</option></select>
+          <select id="ag" aria-label="按来源 Agent 筛选"><option value="">全部 Agent</option></select>
+          <select id="ch" aria-label="按渠道筛选"><option value="">全部渠道</option></select>
+          <select id="sort" aria-label="排序方式"><option value="desc">最新优先</option><option value="asc">最早优先</option></select>
+          <label class="check-filter"><input type="checkbox" id="hideRead"><span>隐藏已读</span></label>
+          <label class="check-filter"><input type="checkbox" id="hideTest" checked><span>隐藏测试</span></label>
+          <button class="clear-filters" id="clearFilters" type="button">清除筛选</button>
+        </div>
+      </section>
+
+      <section class="stream" id="list" aria-live="polite"></section>
+    </div>
+  </main>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>
 const DATA = __DATA__;
-const FIELDS = ["date","source","title","author","url","type","stats","summary","status","tags","package","notes","detail","agent","channel"];
+const FIELDS = ["date","source","title","author","url","type","stats","summary","status","tags","package","notes","detail","agent","channel","state","due","owner"];
+const UNKNOWN = "未知";
 const HDR = __HDR__;
-const read = JSON.parse(localStorage.getItem("inbox_read") || "{}");
-const K = r => r.url || r.title;
-const esc = s => (s==null?"":String(s)).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-function chipClass(s){
-  if(s==="已抓取") return "ok";
-  if(s==="部分抓取") return "partial";
-  if(s==="待补链接") return "bad";
-  if(s==="提示词/要点") return "tip";
-  return "";
+const ACTIONABLE = new Set(["抓取失败","需浏览器","待补链接","部分抓取"]);
+const OPEN_STATES = new Set(["待分拣","已分拣","处理中","等待中"]);
+const FOLLOW_STATES = new Set(["已分拣","处理中","等待中"]);
+const todayStr = (() => {const d = new Date();return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");})();
+const isOverdue = r => !!r.due && r.due < todayStr && OPEN_STATES.has(r.state);
+const isFollow = r => FOLLOW_STATES.has(r.state) || isOverdue(r);
+
+function loadReadState(){
+  try{return JSON.parse(localStorage.getItem("inbox_read") || "{}") || {};}
+  catch(_){return {};}
 }
-function uniq(k){return [...new Set(DATA.map(r=>r[k]).filter(Boolean))].sort()}
-function fill(sel,k,includeUnknown=false){const s=document.getElementById(sel);const values=uniq(k);if(includeUnknown&&DATA.some(r=>!r[k]))values.push("未知");values.forEach(v=>{const o=document.createElement("option");o.value=v;o.textContent=v;s.appendChild(o)})}
-fill("src","source");fill("st","status");fill("ty","type");fill("ag","agent",true);fill("ch","channel",true);
-function matchesOrigin(selected,value){return !selected||(selected==="未知"?!value:value===selected)}
-function render(){
-  const q=document.getElementById("q").value.trim().toLowerCase();
-  const src=document.getElementById("src").value, st=document.getElementById("st").value, ty=document.getElementById("ty").value;
-  const hr=document.getElementById("hideRead").checked;
-  const agent=document.getElementById("ag").value, channel=document.getElementById("ch").value;
-  const hideTest=document.getElementById("hideTest").checked;
-  let rows=DATA.filter(r=>{
-    if(!matchesOrigin(agent,r.agent)||!matchesOrigin(channel,r.channel))return false;
-    if(hideTest&&channel!=="测试"&&r.channel==="测试")return false;
-    if(src&&r.source!==src)return false;
-    if(st&&r.status!==st)return false;
-    if(ty&&r.type!==ty)return false;
-    if(hr&&read[K(r)])return false;
-    if(q){const s=[r.title,r.author,r.summary,r.tags,r.source,r.type,r.agent,r.channel].join(" ").toLowerCase();if(!s.includes(q))return false}
+const read = loadReadState();
+let activeView = "all";
+let activeSource = "";
+let toastTimer = null;
+const keyFor = r => r.url || r.title;
+const byId = id => document.getElementById(id);
+
+function make(tag, className, text){
+  const node = document.createElement(tag);
+  if(className) node.className = className;
+  if(text !== undefined && text !== null) node.textContent = String(text);
+  return node;
+}
+function sourceCounts(){
+  const counts = {};
+  DATA.forEach(r => {const name = r.source || "未分类";counts[name] = (counts[name] || 0) + 1;});
+  return counts;
+}
+function uniqueValues(field){
+  return Array.from(new Set(DATA.map(r => r[field]).filter(Boolean))).sort((a,b) => String(a).localeCompare(String(b),"zh-CN"));
+}
+function fillSelect(id, values){
+  const select = byId(id);
+  values.forEach(value => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    select.appendChild(option);
+  });
+}
+fillSelect("st", uniqueValues("status"));
+fillSelect("pg", ["待分拣","已分拣","处理中","等待中","已完成","已放弃"]);
+fillSelect("ty", uniqueValues("type"));
+function originValues(field){
+  const values = uniqueValues(field);
+  return DATA.some(r => !r[field]) ? values.concat(UNKNOWN) : values;
+}
+fillSelect("ag", originValues("agent"));
+fillSelect("ch", originValues("channel"));
+const matchesOrigin = (selected, value) => !selected || (selected === UNKNOWN ? !value : value === selected);
+
+function isRead(r){return !!read[keyFor(r)];}
+function countUnread(){return DATA.reduce((n,r) => n + (isRead(r) ? 0 : 1),0);}
+function countAttention(){return DATA.reduce((n,r) => n + (ACTIONABLE.has(r.status) ? 1 : 0),0);}
+function countFollow(){return DATA.reduce((n,r) => n + (isFollow(r) ? 1 : 0),0);}
+function countAsr(){return DATA.reduce((n,r) => n + (r.source === "ASR" ? 1 : 0),0);}
+
+function setActiveView(view){
+  activeView = view;
+  activeSource = "";
+  render();
+}
+function renderPrimaryNav(){
+  byId("countAll").textContent = DATA.length;
+  byId("countUnread").textContent = countUnread();
+  byId("countAttention").textContent = countAttention();
+  byId("countAsr").textContent = countAsr();
+  byId("countFollow").textContent = countFollow();
+  document.querySelectorAll("#primaryNav [data-view]").forEach(button => {
+    button.classList.toggle("active", button.dataset.view === activeView && !activeSource);
+  });
+}
+function renderSourceNav(){
+  const root = byId("sourceNav");
+  root.replaceChildren();
+  const all = make("button","nav-item" + (!activeSource && activeView === "all" ? " active" : ""));
+  all.type = "button";
+  all.dataset.source = "";
+  all.append(make("span","nav-icon","◌"),make("span","nav-label","全部来源"));
+  const allCount = make("span","nav-count",DATA.length);
+  all.append(allCount);
+  root.append(all);
+  const counts = sourceCounts();
+  Object.entries(counts)
+    .filter(([name]) => name !== "ASR")
+    .sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0],"zh-CN"))
+    .forEach(([name,count]) => {
+      const button = make("button","nav-item" + (activeSource === name ? " active" : ""));
+      button.type = "button";
+      button.dataset.source = name;
+      button.append(make("span","nav-icon","·"),make("span","nav-label",name),make("span","nav-count",count));
+      root.append(button);
+    });
+}
+function renderStats(){
+  const stats = [
+    {view:"all",label:"收录总数",value:DATA.length,note:"全部来源",icon:"▤",active:activeView==="all"&&!activeSource},
+    {view:"unread",label:"未读",value:countUnread(),note:"待你回看",icon:"●",active:activeView==="unread",warning:false},
+    {view:"attention",label:"待处理",value:countAttention(),note:"抓取问题或待补",icon:"⚑",active:activeView==="attention",warning:true},
+    {view:"follow",label:"跟进中",value:countFollow(),note:"已分拣/处理中/等待/逾期",icon:"⏱",active:activeView==="follow",warning:DATA.some(isOverdue)},
+    {view:"asr",label:"通话 ASR",value:countAsr(),note:"完整转写记录",icon:"◷",active:activeView==="asr"}
+  ];
+  const root = byId("stats");
+  root.replaceChildren();
+  stats.forEach(item => {
+    const button = make("button","stat-card" + (item.active ? " active" : "") + (item.warning ? " warning" : ""));
+    button.type = "button";
+    button.dataset.view = item.view;
+    button.append(make("span","stat-icon",item.icon));
+    const copy = make("span","stat-copy");
+    copy.append(make("span","stat-label",item.label),make("span","stat-value",item.value));
+    button.append(copy,make("span","stat-side",item.note));
+    root.append(button);
+  });
+}
+function currentHeading(){
+  if(activeSource) return activeSource;
+  const names = {all:"全部条目",unread:"未读条目",attention:"待处理",follow:"跟进中",asr:"通话 ASR"};
+  return names[activeView] || "全部条目";
+}
+function selectedRows(){
+  const query = byId("q").value.trim().toLocaleLowerCase("zh-CN");
+  const status = byId("st").value;
+  const progress = byId("pg").value;
+  const type = byId("ty").value;
+  const hideRead = byId("hideRead").checked;
+  const agent = byId("ag").value;
+  const channel = byId("ch").value;
+  const hideTest = byId("hideTest").checked;
+  const rows = DATA.filter(r => {
+    if(!matchesOrigin(agent, r.agent) || !matchesOrigin(channel, r.channel)) return false;
+    if(hideTest && channel !== "测试" && r.channel === "测试") return false;
+    if(activeSource && r.source !== activeSource) return false;
+    if(activeView === "unread" && isRead(r)) return false;
+    if(activeView === "attention" && !ACTIONABLE.has(r.status)) return false;
+    if(activeView === "asr" && r.source !== "ASR") return false;
+    if(activeView === "follow" && !isFollow(r)) return false;
+    if(status && r.status !== status) return false;
+    if(progress && r.state !== progress) return false;
+    if(type && r.type !== type) return false;
+    if(hideRead && isRead(r)) return false;
+    if(query){
+      const searchable = [r.title,r.author,r.summary,r.tags,r.notes,r.source,r.type,r.agent,r.channel,r.state,r.owner].join(" ").toLocaleLowerCase("zh-CN");
+      if(!searchable.includes(query)) return false;
+    }
     return true;
   });
-  rows.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
-  const total=DATA.length, unread=DATA.filter(r=>!read[K(r)]).length;
-  const bySrc={}; DATA.forEach(r=>bySrc[r.source]=(bySrc[r.source]||0)+1);
-  document.getElementById("stats").innerHTML =
-    `<span class="stat key">共 <b>${total}</b> 条</span>`+
-    `<span class="stat hot">未读 <b>${unread}</b></span>`+
-    `<span class="stat">显示 <b>${rows.length}</b></span>`+
-    Object.entries(bySrc).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="stat">${esc(k)} <b>${v}</b></span>`).join("");
-  const list=document.getElementById("list");
-  if(!rows.length){list.innerHTML='<div class="empty">没有符合条件的条目</div>';return}
-  list.innerHTML=rows.map(r=>{
-    const isRead=!!read[K(r)];
-    const tags=(r.tags||"").split(",").map(t=>t.trim()).filter(Boolean);
-    const hasMore=(r.summary||"").length>120;
-    return `<article class="card ${isRead?"read":""}" data-k="${esc(K(r))}">
-      <header class="meta">
-        <span class="src">${esc(r.source)}</span>
-        ${r.date?`<span class="mono">· ${esc(r.date)}</span>`:""}
-        <span class="chip ${chipClass(r.status)}">${esc(r.status)}</span>
-        ${r.type?`<span class="chip">${esc(r.type)}</span>`:""}
-        ${r.agent?`<span class="chip origin">via ${esc(r.agent)}</span>`:""}
-        ${r.channel?`<span class="chip origin">${esc(r.channel)}</span>`:""}
-        <span class="spacer"></span>
-        <button class="mark" onclick="toggle('${esc(K(r)).replace(/'/g,"")}')">${isRead?"↺ 未读":"✓ 已读"}</button>
-      </header>
-      <h3 class="title">${esc(r.title)}</h3>
-      ${r.summary?`<p class="summary">${esc(r.summary)}</p>`:""}
-      ${hasMore?`<button class="more" onclick="this.parentNode.classList.toggle('open');this.textContent=this.parentNode.classList.contains('open')?'收起':'展开全文'">展开全文</button>`:""}
-      ${tags.length?`<div class="tags">${tags.map(t=>`<span class="tag">${esc(t)}</span>`).join("")}</div>`:""}
-      <footer class="foot">
-        ${r.url?`<a class="link" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url.replace(/^https?:\/\//,""))}</a>`:`<span class="nolink">（缺链接）</span>`}
-        ${r.author?`<span class="hot">· ${esc(r.author)}</span>`:""}
-        ${r.stats?`<span class="hot">· ${esc(r.stats)}</span>`:""}
-      </footer>
-    </article>`;
-  }).join("");
+  const direction = byId("sort").value === "asc" ? 1 : -1;
+  rows.sort((a,b) => direction * String(a.date || "").localeCompare(String(b.date || "")) || String(a.title || "").localeCompare(String(b.title || ""),"zh-CN"));
+  return rows;
 }
-function toggle(k){read[k]=!read[k];localStorage.setItem("inbox_read",JSON.stringify(read));render()}
-document.getElementById("q").oninput=render;
-["src","st","ty","ag","ch","hideRead","hideTest"].forEach(id=>document.getElementById(id).onchange=render);
-document.getElementById("theme").onclick=()=>{
-  const cur=document.documentElement.getAttribute("data-theme")==="dark"?"light":"dark";
-  document.documentElement.setAttribute("data-theme",cur);
-  localStorage.setItem("inbox_theme",cur);
-};
-(function(){const t=localStorage.getItem("inbox_theme");if(t)document.documentElement.setAttribute("data-theme",t)})();
+function dateTitle(value){
+  if(!value) return "日期未知";
+  const parts = value.split("-").map(Number);
+  if(parts.length !== 3 || parts.some(Number.isNaN)) return value;
+  const date = new Date(parts[0],parts[1]-1,parts[2],12);
+  return new Intl.DateTimeFormat("zh-CN",{month:"long",day:"numeric",weekday:"long"}).format(date);
+}
+function statusClass(status){
+  if(status === "已抓取" || status === "手工记录") return "status-good";
+  if(status === "部分抓取") return "status-warn";
+  if(status === "抓取失败" || status === "需浏览器" || status === "待补链接") return "status-bad";
+  if(status === "提示词/要点") return "status-note";
+  return "";
+}
+function makeBadge(text, cls){
+  const badge = make("span","badge" + (cls ? " " + cls : ""),text);
+  return badge;
+}
+function shortUrl(value){
+  try{
+    const url = new URL(value);
+    const label = url.hostname + url.pathname;
+    return label.length > 54 ? label.slice(0,51) + "…" : label;
+  }catch(_){
+    return value.length > 54 ? value.slice(0,51) + "…" : value;
+  }
+}
+function createCard(r){
+  const key = keyFor(r);
+  const card = make("article","card" + (isRead(r) ? " read" : ""));
+  const meta = make("div","card-meta");
+  meta.append(make("span","source-label",r.source || "未分类"));
+  if(r.date){meta.append(make("span","meta-dot","·"),make("span","date-label",r.date));}
+  if(r.status) meta.append(makeBadge(r.status,statusClass(r.status)));
+  if(r.type) meta.append(makeBadge(r.type,""));
+  if(r.state && r.state !== "待分拣") meta.append(makeBadge(r.state,r.state === "已完成" ? "status-good" : (r.state === "已放弃" ? "" : "status-note")));
+  if(r.due && OPEN_STATES.has(r.state)) meta.append(makeBadge((isOverdue(r) ? "逾期 " : "到期 ") + r.due.slice(5),isOverdue(r) ? "status-bad" : "status-warn"));
+  if(r.owner && OPEN_STATES.has(r.state)) meta.append(makeBadge("→ " + r.owner,"origin-badge"));
+  if(r.agent) meta.append(makeBadge("via " + r.agent,"origin-badge"));
+  if(r.channel) meta.append(makeBadge(r.channel,"origin-badge"));
+  const head = make("div","card-head");
+  head.append(make("h2","card-title",r.title || "无标题"));
+  const mark = make("button","mark" + (isRead(r) ? " is-read" : ""),isRead(r) ? "✓ 已读" : "标为已读");
+  mark.type = "button";
+  mark.dataset.action = "toggle-read";
+  mark.dataset.key = key;
+  mark.setAttribute("aria-label",isRead(r) ? "标记为未读" : "标记为已读");
+  head.append(mark);
+  card.append(meta,head);
+  if(r.summary){
+    const summary = make("p","summary",r.summary);
+    card.append(summary);
+    if(String(r.summary).length > 160){
+      const more = make("button","more","展开摘要");
+      more.type = "button";
+      more.dataset.action = "expand";
+      card.append(more);
+    }
+  }
+  const tags = String(r.tags || "").split(",").map(tag => tag.trim()).filter(Boolean);
+  if(tags.length){
+    const tagList = make("div","tags");
+    tags.forEach(tag => tagList.append(make("span","tag","#" + tag)));
+    card.append(tagList);
+  }
+  const foot = make("footer","card-foot");
+  const links = make("div","foot-links");
+  if(r.url){
+    const sourceLink = make("a","card-link","打开原文 ↗");
+    sourceLink.href = /^https?:\/\//i.test(String(r.url)) ? r.url : "#";
+    sourceLink.target = "_blank";
+    sourceLink.rel = "noopener";
+    sourceLink.title = r.url;
+    links.append(sourceLink);
+  }else{
+    links.append(make("span","card-link secondary","暂时没有原文链接"));
+  }
+  if(r.detail){
+    const detailLink = make("a","card-link secondary","查看详细记录 →");
+    detailLink.href = r.detail;
+    detailLink.target = "_blank";
+    detailLink.rel = "noopener";
+    links.append(detailLink);
+  }
+  foot.append(links);
+  const metaFoot = make("div","foot-meta");
+  if(r.author) metaFoot.append(make("span","",r.author));
+  if(r.stats) metaFoot.append(make("span","",r.stats));
+  if(metaFoot.childNodes.length) foot.append(metaFoot);
+  card.append(foot);
+  return card;
+}
+function renderList(rows){
+  const root = byId("list");
+  root.replaceChildren();
+  byId("resultsCount").textContent = "显示 " + rows.length + " / " + DATA.length + " 条";
+  if(!rows.length){
+    const empty = make("div","empty");
+    empty.append(make("div","empty-mark","⌕"),make("div","empty-title","没有找到匹配内容"),make("div","empty-hint","试试清除筛选，或换个关键词。"));
+    root.append(empty);
+    return;
+  }
+  const groups = new Map();
+  rows.forEach(r => {
+    const day = r.date || "";
+    if(!groups.has(day)) groups.set(day,[]);
+    groups.get(day).push(r);
+  });
+  groups.forEach((items,day) => {
+    const section = make("section","day-group");
+    const header = make("header","day-heading");
+    header.append(make("h3","",dateTitle(day)),make("span","day-count",items.length + " 条"),make("span","day-rule",""));
+    const cards = make("div","card-list");
+    items.forEach(item => cards.append(createCard(item)));
+    section.append(header,cards);
+    root.append(section);
+  });
+}
+function render(){
+  renderPrimaryNav();
+  renderSourceNav();
+  renderStats();
+  byId("pageTitle").textContent = currentHeading();
+  renderList(selectedRows());
+  byId("clearSearch").hidden = !byId("q").value;
+}
+function showToast(message){
+  const toast = byId("toast");
+  toast.textContent = message;
+  toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove("show"),1800);
+}
+function toggleRead(key){
+  read[key] = !read[key];
+  try{localStorage.setItem("inbox_read",JSON.stringify(read));}
+  catch(_){showToast("浏览器没有保存阅读标记");}
+  render();
+}
+function clearFilters(){
+  activeView = "all";
+  activeSource = "";
+  byId("q").value = "";
+  byId("st").value = "";
+  byId("pg").value = "";
+  byId("ty").value = "";
+  byId("sort").value = "desc";
+  byId("hideRead").checked = false;
+  byId("ag").value = "";
+  byId("ch").value = "";
+  byId("hideTest").checked = true;
+  render();
+}
 function exportCSV(){
-  let csv=[HDR.join(",")];
-  DATA.forEach(r=>csv.push(FIELDS.map(f=>`"${String(r[f]==null?"":r[f]).replace(/"/g,'""')}"`).join(",")));
-  const blob=new Blob(["\ufeff"+csv.join("\n")],{type:"text/csv;charset=utf-8"});
-  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="分享收件箱.csv";a.click();
+  const csv = [HDR.join(",")];
+  DATA.forEach(r => csv.push(FIELDS.map(field => "\"" + String(r[field] == null ? "" : r[field]).replace(/"/g,"\"\"") + "\"").join(",")));
+  const blob = new Blob(["\ufeff" + csv.join("\n")],{type:"text/csv;charset=utf-8"});
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "分享收件箱.csv";
+  link.click();
+  URL.revokeObjectURL(link.href);
+  showToast("已导出全部 " + DATA.length + " 条记录");
 }
+
+byId("primaryNav").addEventListener("click",event => {
+  const button = event.target.closest("[data-view]");
+  if(!button) return;
+  setActiveView(button.dataset.view);
+});
+byId("sourceNav").addEventListener("click",event => {
+  const button = event.target.closest("[data-source]");
+  if(!button) return;
+  activeView = "all";
+  activeSource = button.dataset.source;
+  render();
+});
+byId("stats").addEventListener("click",event => {
+  const button = event.target.closest("[data-view]");
+  if(button) setActiveView(button.dataset.view);
+});
+byId("list").addEventListener("click",event => {
+  const button = event.target.closest("[data-action]");
+  if(!button) return;
+  if(button.dataset.action === "toggle-read") toggleRead(button.dataset.key);
+  if(button.dataset.action === "expand"){
+    const card = button.closest(".card");
+    card.classList.toggle("open");
+    button.textContent = card.classList.contains("open") ? "收起摘要" : "展开摘要";
+  }
+});
+byId("q").addEventListener("input",render);
+byId("clearSearch").addEventListener("click",() => {byId("q").value = "";byId("q").focus();render();});
+["st","pg","ty","ag","ch","sort","hideRead","hideTest"].forEach(id => byId(id).addEventListener("change",render));
+byId("clearFilters").addEventListener("click",clearFilters);
+byId("export").addEventListener("click",exportCSV);
+byId("theme").addEventListener("click",() => {
+  const current = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme",current);
+  try{localStorage.setItem("inbox_theme",current);}catch(_){}
+});
+try{
+  const savedTheme = localStorage.getItem("inbox_theme");
+  if(savedTheme === "light" || savedTheme === "dark") document.documentElement.setAttribute("data-theme",savedTheme);
+}catch(_){}
+window.addEventListener("keydown",event => {
+  const target = event.target;
+  const editing = target && (target.isContentEditable || ["INPUT","TEXTAREA","SELECT"].includes(target.tagName));
+  if(event.key === "/" && !editing){event.preventDefault();byId("q").focus();}
+  if(event.key === "Escape" && target === byId("q")){byId("q").value = "";render();}
+});
 render();
 </script>
 </body>
